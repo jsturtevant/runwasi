@@ -3,7 +3,6 @@ members = [
     "crates/containerd-shim-wasm",
     "crates/wasi-demo-app",
     "crates/oci-tar-builder",
-    "crates/wasmedge",
     "crates/wasmtime",
 ]
 
@@ -23,8 +22,8 @@ serde_json = "1.0"
 env_logger = "0.10"
 log = "0.4"
 tar = "0.4"
-containerd-shim = {git = "https://github.com/containerd/rust-extensions", rev = "27a92fc606c10f848c72b6131278d392f677efc6" }
-ttrpc = "0.7"
+containerd-shim = { git = "https://github.com/jsturtevant/rust-extensions", branch = "windows" }
+ttrpc =  { git = "https://github.com/jsturtevant/ttrpc-rust/", branch = "windows3"}
 chrono = "0.4"
 nix = "0.26"
 cap-std = "0.26"

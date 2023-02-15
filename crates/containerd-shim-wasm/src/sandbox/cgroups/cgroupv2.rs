@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use super::super::{Error, Result};
 use super::RawFD;
 use super::{

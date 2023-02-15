@@ -1,14 +1,17 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+
 use super::cgroups;
 use super::error::Result;
 use anyhow::Context;
+#[cfg(unix)]
 use nix::{sys::signal, unistd::Pid};
 pub use oci_spec::runtime::Spec;
 use serde_json as json;
 use std::collections::HashMap;
 use std::io::{ErrorKind, Write};
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process;
 
@@ -101,6 +104,7 @@ fn parse_env(envs: &[String]) -> HashMap<String, String> {
         .collect()
 }
 
+#[cfg(unix)]
 pub fn setup_prestart_hooks(hooks: &Option<oci_spec::runtime::Hooks>) -> Result<()> {
     if let Some(hooks) = hooks {
         let prestart_hooks = hooks.prestart().as_ref().unwrap();

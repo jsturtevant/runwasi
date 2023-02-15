@@ -3,6 +3,7 @@ use std::env::current_dir;
 use std::fs::{self, File};
 use std::fs::{canonicalize, create_dir_all, OpenOptions};
 use std::ops::Not;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -27,10 +28,18 @@ use containerd_shim::{
     util::{timestamp as new_timestamp, write_address},
     warn, ExitSignal, TtrpcContext, TtrpcResult,
 };
+
+// use protobuf::well_known_types::Timestamp;
+// use protobuf::{Message, SingularPtrField};
 use log::{debug, error};
+
+#[cfg(unix)]
 use nix::mount::{mount, MsFlags};
+#[cfg(unix)]
 use nix::sched::{setns, unshare, CloneFlags};
+#[cfg(unix)]
 use nix::sys::stat::Mode;
+#[cfg(unix)]
 use nix::unistd::mkdir;
 use oci_spec::runtime;
 use ttrpc::context::Context;
@@ -835,6 +844,7 @@ where
             .ok_or_else(|| Error::InvalidArgument("rootfs is not set in runtime spec".to_string()))?
             .path();
 
+        #[cfg(unix)]
         if mkdir(rootfs, Mode::from_bits(0o755).unwrap()).is_ok() { /* ignore */ }
 
         let rootfs_mounts = req.rootfs().to_vec();
@@ -957,8 +967,10 @@ where
 
         debug!("create done");
 
+        
         // Per the spec, the prestart hook must be called as part of the create operation
         debug!("call prehook before the start");
+        #[cfg(unix)]
         oci::setup_prestart_hooks(&spec.hooks())?;
 
         Ok(api::CreateTaskResponse {
@@ -1270,6 +1282,11 @@ where
     }
 }
 
+#[cfg(target_os = "windows")]
+fn setup_namespaces(spec: &runtime::Spec) -> Result<()> {
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 fn setup_namespaces(spec: &runtime::Spec) -> Result<()> {
     let namespaces = spec
@@ -1358,14 +1375,14 @@ where
 
         let envs = vec![] as Vec<(&str, &str)>;
 
-        mount::<str, Path, str, str>(
-            None,
-            "/".as_ref(),
-            None,
-            MsFlags::MS_REC | MsFlags::MS_SLAVE,
-            None,
-        )
-        .map_err(|err| shim::Error::Other(format!("failed to remount rootfs as slave: {}", err)))?;
+        // mount::<str, Path, str, str>(
+        //     None,
+        //     "/".as_ref(),
+        //     None,
+        //     MsFlags::MS_REC | MsFlags::MS_SLAVE,
+        //     None,
+        // )
+        // .map_err(|err| shim::Error::Other(format!("failed to remount rootfs as slave: {}", err)))?;
 
         if let Some(mounts) = spec.mounts() {
             for m in mounts {
@@ -1420,6 +1437,7 @@ where
                         })?;
                 }
 
+                #[cfg(unix)]
                 mount::<str, Path, str, str>(
                     Some(&src.to_string_lossy()),
                     dest,

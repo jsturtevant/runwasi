@@ -1,6 +1,9 @@
+
 use super::{Error, Result};
+#[cfg(unix)]
 use nix::sys::statfs;
 pub use oci_spec::runtime::LinuxResources as Resources;
+#[cfg(unix)]
 use proc_mounts::MountIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -11,10 +14,14 @@ use std::ops::Not;
 use std::os::raw::c_int as RawFD;
 use std::path::PathBuf;
 
+#[cfg(unix)]
 pub mod cgroupv1;
+#[cfg(unix)]
 pub mod cgroupv2;
 
+#[cfg(unix)]
 pub use cgroupv1::CgroupV1;
+#[cfg(unix)]
 pub use cgroupv2::CgroupV2;
 
 #[derive(Debug, PartialEq)]
@@ -36,6 +43,7 @@ impl Display for Version {
 
 type FileMountIter = std::io::BufReader<fs::File>;
 
+#[cfg(unix)]
 fn new_mount_iter() -> Result<MountIter<FileMountIter>> {
     Ok(MountIter::new()?)
 }
@@ -68,18 +76,21 @@ pub trait Cgroup {
     }
 }
 
+#[cfg(unix)]
 impl From<CgroupV2> for Box<dyn Cgroup> {
     fn from(cg: CgroupV2) -> Self {
         Box::new(cg)
     }
 }
 
+#[cfg(unix)]
 impl From<CgroupV1> for Box<dyn Cgroup> {
     fn from(cg: CgroupV1) -> Self {
         Box::new(cg)
     }
 }
 
+#[cfg(unix)]
 impl TryFrom<&str> for Box<dyn Cgroup> {
     type Error = Error;
 
@@ -94,6 +105,7 @@ impl TryFrom<&str> for Box<dyn Cgroup> {
     }
 }
 
+#[cfg(unix)]
 impl<T: std::io::BufRead> TryFrom<CgroupOptions<T>> for Box<dyn Cgroup> {
     type Error = Error;
 
@@ -173,6 +185,7 @@ pub fn new(name: String) -> Result<Box<dyn Cgroup>> {
     name.as_str().try_into()
 }
 
+#[cfg(unix)]
 pub struct CgroupOptions<T: std::io::BufRead> {
     pub mounts: fn() -> Result<MountIter<T>>,
     pub name: String,
@@ -228,6 +241,7 @@ fn list_cgroup_controllers<R: Read>(r: R) -> Result<HashSet<String>> {
     Ok(set)
 }
 
+#[cfg(unix)]
 fn find_cgroup_mounts<T: BufRead>(
     iter: MountIter<T>,
     controllers: &HashSet<String>,
@@ -358,6 +372,7 @@ pub mod tests {
         .map_err(|e| Error::Others(format!("failed to apply cgroup: {}", e)))
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_cgroup() -> Result<()> {
         if !super::super::exec::has_cap_sys_admin() {
@@ -401,6 +416,7 @@ pub mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
     fn new_test_mount_iter(data: &[u8]) -> MountIter<std::io::BufReader<std::io::Cursor<Vec<u8>>>> {
         let mut f = Cursor::new(Vec::new());
         f.write_all(STANDARD_MOUNTS).unwrap();
@@ -465,6 +481,7 @@ rdma    8       3       1
 misc    9       1       1
 ";
 
+    #[cfg(unix)]
     #[test]
     fn test_find_cgroup_mounts() -> Result<()> {
         // Just V1

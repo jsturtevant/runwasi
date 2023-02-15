@@ -2,7 +2,11 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-use libc::{SIGINT, SIGKILL, SIGTERM};
+
+use libc::{SIGINT, SIGTERM};
+
+#[cfg(unix)]
+use libc::{ SIGKILL};
 
 use chrono::{DateTime, Utc};
 
@@ -146,6 +150,7 @@ mod noptests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    #[cfg(unix)]
     use libc::SIGHUP;
 
     use super::*;
@@ -161,6 +166,7 @@ mod noptests {
             n.wait(tx).unwrap();
         });
 
+        #[cfg(unix)]
         nop.kill(SIGKILL as u32)?;
         let ec = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         assert_eq!(ec.0, 137);
@@ -205,11 +211,15 @@ mod noptests {
     fn test_op_kill_other() -> Result<(), Error> {
         let nop = Nop::new("".to_string(), None);
 
-        let err = nop.kill(SIGHUP as u32).unwrap_err();
-        match err {
-            Error::InvalidArgument(_) => {}
-            _ => panic!("unexpected error: {}", err),
+        #[cfg(unix)]
+        {
+            let err = nop.kill(0 as u32).unwrap_err();
+            match err {
+                Error::InvalidArgument(_) => {}
+                _ => panic!("unexpected error: {}", err),
+            }
         }
+     
 
         Ok(())
     }

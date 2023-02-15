@@ -182,51 +182,33 @@ impl Instance for Wasi {
 
         debug!("starting wasi instance");
 
+
         let cg = oci::get_cgroup(&spec)?;
 
         oci::setup_cgroup(cg.as_ref(), &spec)
             .map_err(|e| Error::Others(format!("error setting up cgroups: {}", e)))?;
 
-        let res = unsafe { exec::fork(Some(cg.as_ref())) }?;
-        match res {
-            exec::Context::Parent(tid, pidfd) => {
-                let mut lr = self.pidfd.lock().unwrap();
-                *lr = Some(pidfd.clone());
+        let code = self.exit_code.clone();
 
-                debug!("started wasi instance with tid {}", tid);
-
-                let code = self.exit_code.clone();
-
-                let _ = thread::spawn(move || {
-                    let (lock, cvar) = &*code;
-                    let status = match pidfd.wait() {
-                        Ok(status) => status,
-                        Err(e) => {
-                            error!("error waiting for pid {}: {}", tid, e);
-                            cvar.notify_all();
-                            return;
-                        }
-                    };
-
-                    debug!("wasi instance exited with status {}", status.status);
-                    let mut ec = lock.lock().unwrap();
-                    *ec = Some((status.status, Utc::now()));
-                    drop(ec);
-                    cvar.notify_all();
-                });
-                Ok(tid)
+        let _ = thread::spawn(move || {
+            //wait for exit
+            for sig in signals.forever() {
+                println!("Received signal {:?}", sig);
+                return;
             }
-            exec::Context::Child => {
-                // child process
+            
+            debug!("wasi instance exited with status {}", status.status);
+        });
 
-                // TODO: How to get exit code?
-                // This was relatively straight forward in go, but wasi and wasmtime are totally separate things in rust.
-                let _ret = match f.call(&mut store, &[], &mut []) {
-                    Ok(_) => std::process::exit(0),
-                    Err(_) => std::process::exit(137),
-                };
-            }
-        }
+        // start wasi call
+        let _ = thread::spawn(move || {
+            let _ret = match f.call(&mut store, &[], &mut []) {
+                Ok(_) => std::process::exit(0),
+                Err(_) => std::process::exit(137),
+            };
+        });
+
+        Ok(tid)
     }
 
     fn kill(&self, signal: u32) -> Result<(), Error> {

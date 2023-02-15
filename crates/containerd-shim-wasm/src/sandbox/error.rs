@@ -27,6 +27,7 @@ pub enum Error {
     #[error("{0}")]
     Json(#[from] serde_json::Error),
     #[error("{0}")]
+    #[cfg(unix)]
     Errno(#[from] nix::errno::Errno),
 }
 

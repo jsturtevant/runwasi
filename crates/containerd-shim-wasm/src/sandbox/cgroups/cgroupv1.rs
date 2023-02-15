@@ -1,3 +1,4 @@
+#![cfg(unix)]
 use super::super::{Error, Result};
 use super::{
     ensure_write_file, find_cgroup_mounts, list_cgroup_controllers, new_mount_iter, safe_join,

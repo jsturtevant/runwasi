@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env::current_dir;
 use std::fs::File;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use containerd_shim::{
     publisher::RemotePublisher,
     TtrpcContext, TtrpcResult,
 };
+#[cfg(unix)]
 use nix::sched::{setns, unshare, CloneFlags};
 use oci_spec::runtime;
 use ttrpc::context;
@@ -153,7 +155,9 @@ where
 // Note that this changes the current thread's state.
 // You probably want to run this in a new thread.
 fn start_sandbox(cfg: runtime::Spec, server: &mut Server) -> Result<(), Error> {
+    #[cfg(unix)]
     let namespaces = cfg.linux().as_ref().unwrap().namespaces().as_ref().unwrap();
+    #[cfg(unix)]
     for ns in namespaces {
         if ns.typ() == runtime::LinuxNamespaceType::Network {
             if ns.path().is_some() {

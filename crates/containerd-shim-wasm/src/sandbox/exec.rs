@@ -1,3 +1,5 @@
+#![cfg(linux)]
+
 use super::cgroups::{Cgroup, Version as CgroupVersion};
 use super::error::Error;
 use caps::{CapSet, Capability};
@@ -178,6 +180,7 @@ pub unsafe fn fork(cgroup: Option<&dyn Cgroup>) -> Result<Context, Error> {
     }
 }
 
+#[cfg(unix)]
 #[cfg(test)]
 mod tests {
     use crate::sandbox::testutil::run_test_with_sudo;
