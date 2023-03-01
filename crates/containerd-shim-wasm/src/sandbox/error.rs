@@ -85,7 +85,7 @@ mod tests {
         let t: ttrpc::Error = e.into();
         match t {
             ttrpc::Error::RpcStatus(s) => {
-                assert_eq!(s.code, ttrpc::Code::INVALID_ARGUMENT);
+                assert_eq!(s.code(), ttrpc::Code::INVALID_ARGUMENT);
                 assert_eq!(s.message, "invalid argument");
             }
             _ => panic!("unexpected error"),
@@ -95,7 +95,7 @@ mod tests {
         let t: ttrpc::Error = e.into();
         match t {
             ttrpc::Error::RpcStatus(s) => {
-                assert_eq!(s.code, ttrpc::Code::NOT_FOUND);
+                assert_eq!(s.code(), ttrpc::Code::NOT_FOUND);
                 assert_eq!(s.message, "not found");
             }
             _ => panic!("unexpected error"),
@@ -105,7 +105,7 @@ mod tests {
         let t: ttrpc::Error = e.into();
         match t {
             ttrpc::Error::RpcStatus(s) => {
-                assert_eq!(s.code, ttrpc::Code::ALREADY_EXISTS);
+                assert_eq!(s.code(), ttrpc::Code::ALREADY_EXISTS);
                 assert_eq!(s.message, "already exists");
             }
             _ => panic!("unexpected error"),
@@ -115,7 +115,7 @@ mod tests {
         let t: ttrpc::Error = e.into();
         match t {
             ttrpc::Error::RpcStatus(s) => {
-                assert_eq!(s.code, ttrpc::Code::FAILED_PRECONDITION);
+                assert_eq!(s.code(), ttrpc::Code::FAILED_PRECONDITION);
                 assert_eq!(s.message, "failed precondition");
             }
             _ => panic!("unexpected error"),
@@ -125,7 +125,7 @@ mod tests {
         let t: ttrpc::Error = e.into();
         match t {
             ttrpc::Error::RpcStatus(s) => {
-                assert_eq!(s.code, ttrpc::Code::INVALID_ARGUMENT);
+                assert_eq!(s.code(), ttrpc::Code::INVALID_ARGUMENT);
                 assert_eq!(s.message, "invalid argument");
             }
             _ => panic!("unexpected error"),
@@ -135,7 +135,7 @@ mod tests {
         let t: ttrpc::Error = e.into();
         match t {
             ttrpc::Error::RpcStatus(s) => {
-                assert_eq!(s.code, ttrpc::Code::UNKNOWN);
+                assert_eq!(s.code(), ttrpc::Code::UNKNOWN);
                 assert_eq!(s.message, "any error");
             }
             _ => panic!("unexpected error"),

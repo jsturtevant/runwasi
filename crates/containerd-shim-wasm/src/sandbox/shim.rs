@@ -18,8 +18,8 @@ use containerd_shim::{
     event::Event,
     mount::mount_rootfs,
     protos::events::task::{TaskCreate, TaskDelete, TaskExit, TaskIO, TaskStart},
-    protos::protobuf::well_known_types::Timestamp,
-    protos::protobuf::{Message, SingularPtrField},
+    protos::protobuf::well_known_types::timestamp::Timestamp,
+    protos::protobuf::{MessageDyn, MessageField},
     protos::shim::shim_ttrpc::Task,
     protos::types::task::Status,
     publisher::RemotePublisher,
@@ -151,7 +151,7 @@ where
     }
 }
 
-type EventSender = Sender<(String, Box<dyn Message>)>;
+type EventSender = Sender<(String, Box<dyn MessageDyn>)>;
 
 #[derive(Debug, Clone, Copy)]
 struct Created {}
@@ -462,7 +462,7 @@ mod localtests {
             id: "testbase".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::CREATED);
+        assert_eq!(state.status(), Status::CREATED);
 
         // A little janky since this is internal data, but check that this is seen as a sandbox container
         let i = local.get_instance("testbase")?;
@@ -478,7 +478,7 @@ mod localtests {
             id: "testbase".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::RUNNING);
+        assert_eq!(state.status(), Status::RUNNING);
 
         let ll = local.clone();
         let (base_tx, base_rx) = channel();
@@ -505,7 +505,7 @@ mod localtests {
             id: "testinstance".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::CREATED);
+        assert_eq!(state.status(), Status::CREATED);
 
         // again, this is janky since it is internal data, but check that this is seen as a "real" container.
         // this is the inverse of the above test case.
@@ -522,7 +522,7 @@ mod localtests {
             id: "testinstance".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::RUNNING);
+        assert_eq!(state.status(), Status::RUNNING);
 
         let ll = local.clone();
         let (instance_tx, instance_rx) = channel();
@@ -547,7 +547,7 @@ mod localtests {
             id: "testinstance".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::STOPPED);
+        assert_eq!(state.status(), Status::STOPPED);
         local.task_delete(api::DeleteRequest {
             id: "testinstance".to_string(),
             ..Default::default()
@@ -569,7 +569,7 @@ mod localtests {
             id: "testbase".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::RUNNING);
+        assert_eq!(state.status(), Status::RUNNING);
 
         local.task_kill(api::KillRequest {
             id: "testbase".to_string(),
@@ -582,7 +582,7 @@ mod localtests {
             id: "testbase".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.status, Status::STOPPED);
+        assert_eq!(state.status(), Status::STOPPED);
 
         local.task_delete(api::DeleteRequest {
             id: "testbase".to_string(),
@@ -648,7 +648,7 @@ mod localtests {
             ..Default::default()
         })?;
 
-        assert_eq!(state.get_status(), Status::CREATED);
+        assert_eq!(state.status(), Status::CREATED);
 
         local.task_start(api::StartRequest {
             id: "test".to_string(),
@@ -660,7 +660,7 @@ mod localtests {
             ..Default::default()
         })?;
 
-        assert_eq!(state.get_status(), Status::RUNNING);
+        assert_eq!(state.status(), Status::RUNNING);
 
         let (tx, rx) = channel();
         let ll = local.clone();
@@ -686,7 +686,7 @@ mod localtests {
             id: "test".to_string(),
             ..Default::default()
         })?;
-        assert_eq!(state.get_status(), Status::STOPPED);
+        assert_eq!(state.status(), Status::STOPPED);
 
         local.task_delete(api::DeleteRequest {
             id: "test".to_string(),
@@ -714,7 +714,7 @@ where
     E: Send + Sync + Clone,
 {
     /// Creates a new local task service.
-    pub fn new(engine: E, tx: Sender<(String, Box<dyn Message>)>, exit: Arc<ExitSignal>) -> Self
+    pub fn new(engine: E, tx: Sender<(String, Box<dyn MessageDyn>)>, exit: Arc<ExitSignal>) -> Self
     where
         T: Instance<E = E> + Sync + Send,
         E: Send + Sync + Clone,
@@ -771,22 +771,22 @@ where
     }
 
     fn task_create(&self, req: api::CreateTaskRequest) -> Result<api::CreateTaskResponse> {
-        if !req.get_checkpoint().is_empty() || !req.get_parent_checkpoint().is_empty() {
+        if !req.checkpoint().is_empty() || !req.parent_checkpoint().is_empty() {
             return Err(ShimError::Unimplemented("checkpoint is not supported".to_string()).into());
         }
 
-        if req.get_terminal() {
+        if req.terminal {
             return Err(Error::InvalidArgument(
                 "terminal is not supported".to_string(),
             ));
         }
 
-        if self.instance_exists(req.get_id()) {
-            return Err(Error::AlreadyExists(req.get_id().to_string()));
+        if self.instance_exists(req.id()) {
+            return Err(Error::AlreadyExists(req.id));
         }
 
         let mut spec = oci::load(
-            Path::new(req.get_bundle())
+            Path::new(req.bundle())
                 .join("config.json")
                 .as_path()
                 .to_str()
@@ -807,13 +807,13 @@ where
                         .unwrap()
                         .insert(req.id.clone(), Arc::new(self.new_base(req.id.clone())));
                     self.send_event(TaskCreate {
-                        container_id: req.get_id().into(),
-                        bundle: req.get_bundle().into(),
-                        rootfs: req.get_rootfs().into(),
-                        io: SingularPtrField::some(TaskIO {
-                            stdin: req.get_stdin().into(),
-                            stdout: req.get_stdout().into(),
-                            stderr: req.get_stderr().into(),
+                        container_id: req.id,
+                        bundle: req.bundle,
+                        rootfs: req.rootfs,
+                        io: MessageField::some(TaskIO {
+                            stdin: req.stdin,
+                            stdout: req.stdout,
+                            stderr: req.stderr,
                             ..Default::default()
                         }),
                         ..Default::default()
@@ -826,7 +826,7 @@ where
             }
         }
 
-        spec.canonicalize_rootfs(req.get_bundle()).map_err(|err| {
+        spec.canonicalize_rootfs(req.bundle()).map_err(|err| {
             ShimError::InvalidArgument(format!("could not canonicalize rootfs: {}", err))
         })?;
         let rootfs = spec
@@ -837,10 +837,10 @@ where
 
         if mkdir(rootfs, Mode::from_bits(0o755).unwrap()).is_ok() { /* ignore */ }
 
-        let rootfs_mounts = req.get_rootfs().to_vec();
+        let rootfs_mounts = req.rootfs().to_vec();
         if !rootfs_mounts.is_empty() {
             for m in rootfs_mounts {
-                let mount_type = m.field_type.as_str().none_if(|&x| x.is_empty());
+                let mount_type = m.type_().none_if(|&x| x.is_empty());
                 let source = m.source.as_str().none_if(|&x| x.is_empty());
                 mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
             }
@@ -922,14 +922,14 @@ where
         let engine = self.engine.clone();
         let mut builder = InstanceConfig::new(engine);
         builder
-            .set_stdin(req.get_stdin().into())
-            .set_stdout(req.get_stdout().into())
-            .set_stderr(req.get_stderr().into())
-            .set_bundle(req.get_bundle().into());
+            .set_stdin(req.stdin().to_string())
+            .set_stdout(req.stdout().to_string())
+            .set_stderr(req.stderr().to_string())
+            .set_bundle(req.bundle().to_string());
         self.instances.write().unwrap().insert(
-            req.get_id().to_string(),
+            req.id().to_string(),
             Arc::new(InstanceData {
-                instance: Some(T::new(req.get_id().to_string(), Some(&builder))),
+                instance: Some(T::new(req.id().to_string(), Some(&builder))),
                 base: None,
                 cfg: builder,
                 pid: RwLock::new(None),
@@ -943,13 +943,13 @@ where
         );
 
         self.send_event(TaskCreate {
-            container_id: req.get_id().into(),
-            bundle: req.get_bundle().into(),
-            rootfs: req.get_rootfs().into(),
-            io: SingularPtrField::some(TaskIO {
-                stdin: req.get_stdin().into(),
-                stdout: req.get_stdout().into(),
-                stderr: req.get_stderr().into(),
+            container_id: req.id().into(),
+            bundle: req.bundle().into(),
+            rootfs: req.rootfs().into(),
+            io: MessageField::some(TaskIO {
+                stdin: req.stdin().into(),
+                stdout: req.stdout().into(),
+                stderr: req.stderr().into(),
                 ..Default::default()
             }),
             ..Default::default()
@@ -968,11 +968,11 @@ where
     }
 
     fn task_start(&self, req: api::StartRequest) -> Result<api::StartResponse> {
-        if req.get_exec_id().is_empty().not() {
+        if req.exec_id().is_empty().not() {
             return Err(ShimError::Unimplemented("exec is not supported".to_string()).into());
         }
 
-        let i = self.get_instance(req.get_id())?;
+        let i = self.get_instance(req.id())?;
         let pid = i.start()?;
 
         let mut pid_w = i.pid.write().unwrap();
@@ -980,7 +980,7 @@ where
         drop(pid_w);
 
         self.send_event(TaskStart {
-            container_id: req.get_id().into(),
+            container_id: req.id().into(),
             pid,
             ..Default::default()
         });
@@ -992,11 +992,11 @@ where
 
         let sender = self.events.clone();
 
-        let id = req.get_id().to_string();
+        let id = req.id().to_string();
         let state = i.state.clone();
 
         thread::Builder::new()
-            .name(format!("{}-wait", req.get_id()))
+            .name(format!("{}-wait", req.id().to_string()))
             .spawn(move || {
                 let ec = rx.recv().unwrap();
 
@@ -1015,7 +1015,7 @@ where
                 let event = TaskExit {
                     container_id: id.clone(),
                     exit_status: ec.0,
-                    exited_at: SingularPtrField::some(timestamp),
+                    exited_at: MessageField::some(timestamp),
                     pid,
                     id,
                     ..Default::default()
@@ -1043,26 +1043,26 @@ where
     }
 
     fn task_kill(&self, req: api::KillRequest) -> Result<()> {
-        if req.get_exec_id().is_empty().not() {
+        if req.exec_id().is_empty().not() {
             return Err(Error::InvalidArgument("exec is not supported".to_string()));
         }
-        self.get_instance(req.get_id())?.kill(req.get_signal())?;
+        self.get_instance(req.id())?.kill(req.signal())?;
         Ok(())
     }
 
     fn task_delete(&self, req: api::DeleteRequest) -> Result<api::DeleteResponse> {
-        if req.get_exec_id().is_empty().not() {
+        if req.exec_id().is_empty().not() {
             return Err(Error::InvalidArgument("exec is not supported".to_string()));
         }
 
-        let i = self.get_instance(req.get_id())?;
+        let i = self.get_instance(req.id())?;
 
         i.delete()?;
 
         let pid = i.pid.read().unwrap().unwrap_or_default();
 
         let mut event = TaskDelete {
-            container_id: req.get_id().into(),
+            container_id: req.id().into(),
             pid,
             ..Default::default()
         };
@@ -1079,8 +1079,8 @@ where
             resp.exit_status = ec.0;
 
             let mut ts = Timestamp::new();
-            ts.set_seconds(ec.1.timestamp());
-            ts.set_nanos(ec.1.timestamp_subsec_nanos() as i32);
+            ts.seconds = ec.1.timestamp();
+            ts.nanos = (ec.1.timestamp_subsec_nanos() as i32);
 
             let timestamp = new_timestamp()?;
             event.set_exited_at(timestamp.clone());
@@ -1088,18 +1088,18 @@ where
         }
         drop(status);
 
-        self.instances.write().unwrap().remove(req.get_id());
+        self.instances.write().unwrap().remove(req.id().into());
 
         self.send_event(event);
         Ok(resp)
     }
 
     fn task_wait(&self, req: api::WaitRequest) -> Result<api::WaitResponse> {
-        if req.get_exec_id().is_empty().not() {
+        if req.exec_id().is_empty().not() {
             return Err(Error::InvalidArgument("exec is not supported".to_string()));
         }
 
-        let i = self.get_instance(req.get_id())?;
+        let i = self.get_instance(req.id())?;
 
         let (lock, cvar) = &*i.status.clone();
         let mut status = lock.lock().unwrap();
@@ -1114,8 +1114,8 @@ where
         debug!("wait done: {:?}", req);
 
         let mut timestamp = Timestamp::new();
-        timestamp.set_seconds(code.1.timestamp());
-        timestamp.set_nanos(code.1.timestamp_subsec_nanos() as i32);
+        timestamp.seconds = code.1.timestamp();
+        timestamp.nanos = code.1.timestamp_subsec_nanos() as i32;
 
         let mut wr = api::WaitResponse {
             exit_status: code.0,
@@ -1126,11 +1126,11 @@ where
     }
 
     fn task_state(&self, req: api::StateRequest) -> Result<api::StateResponse> {
-        if req.get_exec_id().is_empty().not() {
+        if req.exec_id().is_empty().not() {
             return Err(Error::InvalidArgument("exec is not supported".to_string()));
         }
 
-        let i = self.get_instance(req.get_id())?;
+        let i = self.get_instance(req.id())?;
         let mut state = api::StateResponse {
             bundle: i.cfg.get_bundle().unwrap_or_default(),
             stdin: i.cfg.get_stdin().unwrap_or_default(),
@@ -1142,7 +1142,7 @@ where
         let pid_lock = i.pid.read().unwrap();
         let pid = *pid_lock;
         if pid.is_none() {
-            state.status = Status::CREATED;
+            state.set_status(Status::CREATED);
             return Ok(state);
         }
         drop(pid_lock);
@@ -1155,16 +1155,16 @@ where
         drop(status);
 
         if let Some(c) = code {
-            state.status = Status::STOPPED;
+            state.set_status(Status::STOPPED);
             let ec = c;
             state.exit_status = ec.0;
 
             let mut timestamp = Timestamp::new();
-            timestamp.set_seconds(ec.1.timestamp());
-            timestamp.set_nanos(ec.1.timestamp_subsec_nanos() as i32);
+            timestamp.seconds = ec.1.timestamp();
+            timestamp.nanos = (ec.1.timestamp_subsec_nanos() as i32);
             state.set_exited_at(timestamp);
         } else {
-            state.status = Status::RUNNING;
+            state.set_status(Status::RUNNING);
         }
         Ok(state)
     }
@@ -1177,7 +1177,7 @@ where
 {
     type Instance = T;
     fn new(namespace: String, _id: String, engine: E, publisher: RemotePublisher) -> Self {
-        let (tx, rx) = channel::<(String, Box<dyn Message>)>();
+        let (tx, rx) = channel::<(String, Box<dyn MessageDyn>)>();
         forward_events(namespace, publisher, rx);
         Local::<T, E>::new(engine, tx.clone(), Arc::new(ExitSignal::default()))
     }
@@ -1237,7 +1237,7 @@ where
     ) -> TtrpcResult<api::ConnectResponse> {
         debug!("connect: {:?}", req);
 
-        let i = self.get_instance(req.get_id())?;
+        let i = self.get_instance(req.id())?;
         let pid = *i.pid.read().unwrap().as_ref().unwrap_or(&0);
 
         Ok(api::ConnectResponse {
@@ -1448,7 +1448,7 @@ where
     }
 
     fn create_task_service(&self, publisher: RemotePublisher) -> Self::T {
-        let (tx, rx) = channel::<(String, Box<dyn Message>)>();
+        let (tx, rx) = channel::<(String, Box<dyn MessageDyn>)>();
         forward_events(self.namespace.to_string(), publisher, rx);
         Local::<I, E>::new(self.engine.clone(), tx.clone(), self.exit.clone())
     }
@@ -1457,7 +1457,7 @@ where
         let timestamp = new_timestamp()?;
         Ok(api::DeleteResponse {
             exit_status: 137,
-            exited_at: SingularPtrField::some(timestamp),
+            exited_at: MessageField::some(timestamp),
             ..Default::default()
         })
     }
@@ -1466,7 +1466,7 @@ where
 fn forward_events(
     namespace: String,
     publisher: RemotePublisher,
-    events: Receiver<(String, Box<dyn Message>)>,
+    events: Receiver<(String, Box<dyn MessageDyn>)>,
 ) {
     thread::Builder::new()
         .name("event-publisher".to_string())
