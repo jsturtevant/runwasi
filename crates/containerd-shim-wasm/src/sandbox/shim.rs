@@ -1,14 +1,28 @@
 use std::collections::HashMap;
-use std::env::current_dir;
+use std::env::{current_dir, self};
 use std::fs::{self, File};
 use std::fs::{canonicalize, create_dir_all, OpenOptions};
 use std::ops::Not;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
-use std::thread;
+use std::{thread, io};
+use std::process;
+
+use serde_json::Value;
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::WaitForSingleObject;
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent};
+#[cfg(windows)]
+use windows_sys::Win32::System::WindowsProgramming::INFINITE;
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 
 use super::instance::{EngineGetter, Instance, InstanceConfig, Nop};
 use super::{oci, Error, SandboxService};
@@ -29,6 +43,8 @@ use containerd_shim::{
     warn, ExitSignal, TtrpcContext, TtrpcResult,
 };
 
+
+
 // use protobuf::well_known_types::Timestamp;
 // use protobuf::{Message, SingularPtrField};
 use log::{debug, error};
@@ -41,7 +57,7 @@ use nix::sched::{setns, unshare, CloneFlags};
 use nix::sys::stat::Mode;
 #[cfg(unix)]
 use nix::unistd::mkdir;
-use oci_spec::runtime;
+use oci_spec::runtime::{self, Root};
 use ttrpc::context::Context;
 
 type InstanceDataStatus = (Mutex<Option<(u32, DateTime<Utc>)>>, Condvar);
@@ -717,6 +733,44 @@ mod localtests {
     }
 }
 
+
+fn setup_debugger_event(){
+    let debugger = env::var("WASM_DEBUGGER").unwrap_or("".to_string());
+    if debugger == "" {
+        return;
+    }
+    let event_name = format!("Global\\debugger-{}", process::id());
+    debug!("Halting until signalled: {}", event_name);
+    let e = match create_event(event_name) {
+        Ok(e) => e,
+        Err(e) => {
+            error!("failed to create event for debugger: {}", e);
+            return;
+        }
+    };
+    match unsafe { WaitForSingleObject(e, INFINITE) } {
+        0 => {},
+        _ => {
+            error!("failed to wait for debugger event: {}", io::Error::last_os_error());
+            return;
+        }
+    }
+    debug!("signal received, continuing");
+}
+
+fn create_event(name: String) -> Result<isize> {
+    let name = OsStr::new(name.as_str())
+        .encode_wide()
+        .chain(Some(0)) // add NULL termination
+        .collect::<Vec<_>>();
+
+    let result = unsafe { CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr()) };
+    match result {
+        0 => Err(Error::Others(io::Error::last_os_error().to_string())),
+        _ => Ok(result),
+    }
+}
+
 impl<T, E> Local<T, E>
 where
     T: Instance<E = E> + Send + Sync,
@@ -780,6 +834,8 @@ where
     }
 
     fn task_create(&self, req: api::CreateTaskRequest) -> Result<api::CreateTaskResponse> {
+        //setup_debugger_event();
+        
         if !req.checkpoint().is_empty() || !req.parent_checkpoint().is_empty() {
             return Err(ShimError::Unimplemented("checkpoint is not supported".to_string()).into());
         }
@@ -838,6 +894,18 @@ where
         spec.canonicalize_rootfs(req.bundle()).map_err(|err| {
             ShimError::InvalidArgument(format!("could not canonicalize rootfs: {}", err))
         })?;
+
+        let rootfs_mounts = req.rootfs().to_vec();
+        let windows_file = rootfs_mounts[0].options[1].strip_prefix("parentLayerPaths=").unwrap();
+
+        let parent_layers: Value = serde_json::from_str(&windows_file)?;
+        let layer = &parent_layers[0];
+        
+        let mut b = Root::default();
+        let r = b.set_path(PathBuf::from_str(layer.as_str().unwrap()).unwrap());
+        spec.set_root(Some(r.to_owned()));
+        
+
         let rootfs = spec
             .root()
             .as_ref()
@@ -846,14 +914,13 @@ where
 
         #[cfg(unix)]
         if mkdir(rootfs, Mode::from_bits(0o755).unwrap()).is_ok() { /* ignore */ }
-
-        let rootfs_mounts = req.rootfs().to_vec();
+        
         if !rootfs_mounts.is_empty() {
-            for m in rootfs_mounts {
-                let mount_type = m.type_().none_if(|&x| x.is_empty());
-                let source = m.source.as_str().none_if(|&x| x.is_empty());
-                mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
-            }
+            // for m in rootfs_mounts {
+            //     let mount_type = m.type_().none_if(|&x| x.is_empty());
+            //     let source = m.source.as_str().none_if(|&x| x.is_empty());
+            //     mount_rootfs(mount_type, source, &m.options.to_vec(), rootfs)?;
+            // }
         }
 
         let default_mounts = vec![];
@@ -935,7 +1002,8 @@ where
             .set_stdin(req.stdin().to_string())
             .set_stdout(req.stdout().to_string())
             .set_stderr(req.stderr().to_string())
-            .set_bundle(req.bundle().to_string());
+            .set_bundle(req.bundle().to_string())
+            .set_spec(spec.clone());
         self.instances.write().unwrap().insert(
             req.id().to_string(),
             Arc::new(InstanceData {
@@ -980,6 +1048,8 @@ where
     }
 
     fn task_start(&self, req: api::StartRequest) -> Result<api::StartResponse> {
+        setup_debugger_event();
+        
         if req.exec_id().is_empty().not() {
             return Err(ShimError::Unimplemented("exec is not supported".to_string()).into());
         }
@@ -1357,7 +1427,7 @@ where
     fn start_shim(&mut self, opts: containerd_shim::StartOpts) -> shim::Result<String> {
         let dir = current_dir().map_err(|err| ShimError::Other(err.to_string()))?;
         let spec = oci::load(dir.join("config.json").to_str().unwrap()).map_err(|err| {
-            shim::Error::InvalidArgument(format!("error loading runtime spec: {}", err))
+            shim::Error::InvalidArgument(format!("error loading runtime spec in dir {}: {}",dir.to_str().unwrap(), err))
         })?;
 
         let default = HashMap::new() as HashMap<String, String>;
@@ -1499,6 +1569,7 @@ fn forward_events(
 }
 
 // This is a copy of the parse_mount function from the youki libcontainer crate.
+#[cfg(unix)]
 fn parse_mount(m: &runtime::Mount) -> MsFlags {
     let mut flags = MsFlags::empty();
     if let Some(options) = &m.options() {

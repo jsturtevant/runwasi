@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 
 use super::cgroups;
-use super::error::Result;
-use anyhow::Context;
+//use super::error::Result;
+use super::{Error, Result};
 #[cfg(unix)]
 use nix::{sys::signal, unistd::Pid};
 pub use oci_spec::runtime::Spec;
@@ -44,6 +44,15 @@ pub fn spec_from_file<P: AsRef<Path>>(path: P) -> Result<Spec> {
 }
 
 struct NopCgroup {}
+
+// #[cfg(windows)]
+// impl TryFrom<&str> for Box<dyn cgroups::Cgroup> {
+//     type Error = Error;
+
+//     fn try_from(s: &str) -> Result<Self> {
+//         NopCgroup{}.try_into()
+//     }
+// }
 
 impl cgroups::Cgroup for NopCgroup {
     fn add_task(&self, _pid: u32) -> Result<()> {
@@ -161,4 +170,53 @@ pub fn setup_prestart_hooks(hooks: &Option<oci_spec::runtime::Hooks>) -> Result<
         }
     }
     Ok(())
+}
+
+mod ocitests {
+    use crate::sandbox::Error;
+    use std::io::prelude::*;
+    use tempfile::tempdir;
+    use std::fs::{create_dir, read_to_string, File};
+
+    use super::load;
+
+    const windows_spec: &[u8]= r#"{
+        "ociVersion": "1.0.2-dev",
+        "process": {
+            "user": {
+                "username": "ContainerUser"
+            },
+            "args": [
+                "/wasi-demo-app.wasm"
+            ],
+            "cwd": ""
+        },
+        "root": {
+            "path": ""
+        },
+        "windows": {
+            "layerFolders": null,
+            "ignoreFlushesDuringBoot": true,
+            "network": {
+                "allowUnqualifiedDNSQuery": true
+            }
+        }
+    }
+    "#.as_bytes();
+
+    #[test]
+    fn test_oci_parse() -> Result<(), Error> {
+        let dir = tempdir()?;
+
+        create_dir(dir.path().join("rootfs"))?;
+
+        let path = dir.path().join("rootfs/config.json");
+
+        let mut f = File::create(path.as_path())?;
+        f.write_all(windows_spec)?;
+
+        let spec = load(path.to_str().unwrap()).unwrap();
+
+        Ok(())
+    }
 }

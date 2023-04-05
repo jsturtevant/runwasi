@@ -22,8 +22,8 @@ serde_json = "1.0"
 env_logger = "0.10"
 log = "0.4"
 tar = "0.4"
-containerd-shim = { git = "https://github.com/jsturtevant/rust-extensions", branch = "windows" }
-ttrpc =  { git = "https://github.com/jsturtevant/ttrpc-rust/", branch = "windows3"}
+containerd-shim = { path = "../rust-extensions/crates/shim/" }
+ttrpc =   { path = "../ttrpc-rust" }
 chrono = "0.4"
 nix = "0.26"
 cap-std = "0.26"

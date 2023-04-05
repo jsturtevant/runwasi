@@ -22,10 +22,19 @@ fn main() {
         .unwrap();
 
     let app_path = bin_output_dir.join("wasi-demo-app.wasm");
+    let windows_file = PathBuf::from("blank.txt");
     let layer_path = out_dir.join("layer.tar");
-    tar::Builder::new(File::create(&layer_path).unwrap())
-        .append_path_with_name(&app_path, "wasi-demo-app.wasm")
-        .unwrap();
+    let mut b = tar::Builder::new(File::create(&layer_path).unwrap());
+    b.append_dir("Files", ".").unwrap();
+    b.append_dir("Files\\Windows", ".").unwrap();
+    b.append_dir("Files\\Windows\\System32", ".").unwrap();
+    b.append_dir("Files\\Windows\\System32\\config", ".").unwrap();
+    b.append_path_with_name(&app_path, "wasi-demo-app.wasm").unwrap();
+    b.append_path_with_name(&windows_file, "Files\\Windows\\System32\\config\\DEFAULT").unwrap();
+    b.append_path_with_name(&windows_file, "Files\\Windows\\System32\\config\\SAM").unwrap();
+    b.append_path_with_name(&windows_file, "Files\\Windows\\System32\\config\\SECURITY").unwrap();
+    b.append_path_with_name(&windows_file, "Files\\Windows\\System32\\config\\SOFTWARE").unwrap();
+    b.append_path_with_name(&windows_file, "Files\\Windows\\System32\\config\\SYSTEM").unwrap();
 
     let mut builder = Builder::default();
 
@@ -39,7 +48,7 @@ fn main() {
     let layer_digest = try_digest(layer_path.as_path()).unwrap();
     let img = spec::ImageConfigurationBuilder::default()
         .config(config)
-        .os("wasi")
+        .os("windows")
         .architecture("wasm")
         .rootfs(
             spec::RootFsBuilder::default()

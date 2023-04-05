@@ -290,7 +290,6 @@ dependencies = [
 [[package]]
 name = "containerd-shim"
 version = "0.3.0"
-source = "git+https://github.com/jsturtevant/rust-extensions?branch=windows#de6c71f575bcb5704d8ea6b7f8ccc3db403c504d"
 dependencies = [
  "cgroups-rs",
  "command-fds",
@@ -317,7 +316,6 @@ dependencies = [
 [[package]]
 name = "containerd-shim-protos"
 version = "0.2.0"
-source = "git+https://github.com/jsturtevant/rust-extensions?branch=windows#de6c71f575bcb5704d8ea6b7f8ccc3db403c504d"
 dependencies = [
  "protobuf 3.2.0",
  "ttrpc",
@@ -350,6 +348,7 @@ dependencies = [
  "thiserror",
  "ttrpc",
  "ttrpc-codegen",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -1773,6 +1772,7 @@ dependencies = [
  "wasi-common",
  "wasmtime",
  "wasmtime-wasi",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -2110,7 +2110,6 @@ dependencies = [
 [[package]]
 name = "ttrpc"
 version = "0.7.1"
-source = "git+https://github.com/jsturtevant/ttrpc-rust/?branch=windows3#7cbc76468ca139897ee2fe1c83f61f50fc0e2c20"
 dependencies = [
  "byteorder",
  "libc",

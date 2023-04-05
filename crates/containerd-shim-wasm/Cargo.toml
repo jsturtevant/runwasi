@@ -25,6 +25,7 @@ nix = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 libc = { workspace = true }
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 clone3 = "0.2"
@@ -32,11 +33,14 @@ command-fds = "0.2"
 proc-mounts = "0.3"
 caps = "0.5"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = {version = "0.45", features = [ "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"]}
+
 [build-dependencies]
 ttrpc-codegen = { version = "0.4", optional = true }
 
 [dev-dependencies]
-tempfile = "3"
+
 pretty_assertions = "1"
 signal-hook = "0.3"
 env_logger = { workspace = true }

@@ -9,6 +9,7 @@ use libc::{SIGINT, SIGTERM};
 use libc::{ SIGKILL};
 
 use chrono::{DateTime, Utc};
+use oci_spec::runtime::Spec;
 
 use super::error::Error;
 
@@ -24,6 +25,7 @@ where
     stdout: Option<String>,
     stderr: Option<String>,
     bundle: Option<String>,
+    spec:   Option<Spec>,
 }
 
 impl<E> InstanceConfig<E>
@@ -37,6 +39,7 @@ where
             stdout: None,
             stderr: None,
             bundle: None,
+            spec: None,
         }
     }
 
@@ -74,6 +77,15 @@ where
 
     pub fn get_bundle(&self) -> Option<String> {
         self.bundle.clone()
+    }
+
+    pub fn set_spec(&mut self, spec: Spec) -> &mut Self {
+        self.spec = Some(spec);
+        self
+    }
+
+    pub fn get_spec(&self) -> Option<Spec> {
+        self.spec.clone()
     }
 
     pub fn get_engine(&self) -> E {

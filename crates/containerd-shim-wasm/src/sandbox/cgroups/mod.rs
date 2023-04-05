@@ -90,18 +90,23 @@ impl From<CgroupV1> for Box<dyn Cgroup> {
     }
 }
 
-#[cfg(unix)]
+
 impl TryFrom<&str> for Box<dyn Cgroup> {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<Self> {
-        CgroupOptions {
-            name: s.to_string(),
-            root: None,
-            mounts: new_mount_iter,
-            controllers: None,
-        }
-        .try_into()
+
+        // CgroupOptions {
+        //     name: s.to_string(),
+        //     root: None,
+        //     mounts: new_mount_iter,
+        //     controllers: None,
+        // }
+        // .try_into()
+        Err(Error::Others(format!(
+            "cgroup {} is not supported",
+            s,
+        )))
     }
 }
 

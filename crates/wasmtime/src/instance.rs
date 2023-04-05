@@ -7,11 +7,14 @@ use std::thread;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use containerd_shim_wasm::sandbox::error::Error;
+#[cfg(unix)]
 use containerd_shim_wasm::sandbox::exec;
 use containerd_shim_wasm::sandbox::oci;
 use containerd_shim_wasm::sandbox::{EngineGetter, Instance, InstanceConfig};
 use log::{debug, error};
+#[cfg(unix)]
 use nix::sys::signal::SIGKILL;
+use oci_spec::runtime::Spec;
 use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{sync::file::File as WasiFile, WasiCtx, WasiCtxBuilder};
 
@@ -27,8 +30,9 @@ pub struct Wasi {
     stdout: String,
     stderr: String,
     bundle: String,
+    spec: Spec,
 
-    pidfd: Arc<Mutex<Option<exec::PidFD>>>,
+    pidfd: Arc<Mutex<Option<isize>>>,
 }
 
 #[cfg(test)]
@@ -74,10 +78,15 @@ pub fn maybe_open_stdio(path: &str) -> Result<Option<WasiFile>, Error> {
     }
 }
 
-fn load_spec(bundle: String) -> Result<oci::Spec, Error> {
-    let mut spec = oci::load(Path::new(&bundle).join("config.json").to_str().unwrap())?;
+fn load_spec(spec: Spec, bundle: String) -> Result<oci::Spec, Error> {
+    //let mut spec = oci::load(Path::new(&bundle).join("config.json").to_str().unwrap())?;
+
+    let mut spec = spec.clone(); 
     spec.canonicalize_rootfs(&bundle)
         .map_err(|e| Error::Others(format!("error canonicalizing rootfs in spec: {}", e)))?;
+
+    
+
     Ok(spec)
 }
 
@@ -126,8 +135,13 @@ pub fn prepare_module(
     if let Some(strpd) = stripped {
         cmd = strpd.to_string();
     }
+    let stripped = args[0].strip_prefix("/");
+    if let Some(strpd) = stripped {
+        cmd = strpd.to_string();
+    }
 
-    let mod_path = oci::get_root(spec).join(cmd);
+    let root = oci::get_root(spec);
+    let mod_path = root.join(cmd);
 
     debug!("loading module from file");
     let module = Module::from_file(&engine, mod_path)
@@ -147,6 +161,7 @@ impl Instance for Wasi {
             stdout: cfg.get_stdout().unwrap_or_default(),
             stderr: cfg.get_stderr().unwrap_or_default(),
             bundle: cfg.get_bundle().unwrap_or_default(),
+            spec:   cfg.get_spec().unwrap_or_default(),
             pidfd: Arc::new(Mutex::new(None)),
         }
     }
@@ -163,7 +178,7 @@ impl Instance for Wasi {
             .map_err(|err| Error::Others(format!("error adding to linker: {}", err)))?;
 
         debug!("preparing module");
-        let spec = load_spec(self.bundle.clone())?;
+        let spec = load_spec(self.spec.clone(), self.bundle.clone())?;
 
         let m = prepare_module(engine.clone(), &spec, stdin, stdout, stderr)
             .map_err(|e| Error::Others(format!("error setting up module: {}", e)))?;
@@ -192,12 +207,11 @@ impl Instance for Wasi {
 
         let _ = thread::spawn(move || {
             //wait for exit
-            for sig in signals.forever() {
-                println!("Received signal {:?}", sig);
-                return;
+            loop {
+                debug!("wasi instance started ");
             }
             
-            debug!("wasi instance exited with status {}", status.status);
+            //debug!("wasi instance exited with status ");
         });
 
         // start wasi call
@@ -208,25 +222,26 @@ impl Instance for Wasi {
             };
         });
 
-        Ok(tid)
+        Ok(1)
     }
 
     fn kill(&self, signal: u32) -> Result<(), Error> {
-        if signal != SIGKILL as u32 {
-            return Err(Error::InvalidArgument(
-                "only SIGKILL is supported".to_string(),
-            ));
-        }
+        // if signal != SIGKILL as u32 {
+        //     return Err(Error::InvalidArgument(
+        //         "only SIGKILL is supported".to_string(),
+        //     ));
+        // }
 
-        let lr = self.pidfd.lock().unwrap();
-        let fd = lr
-            .as_ref()
-            .ok_or_else(|| Error::FailedPrecondition("module is not running".to_string()))?;
-        fd.kill(signal as i32)
+        // let lr = self.pidfd.lock().unwrap();
+        // let fd = lr
+        //     .as_ref()
+        //     .ok_or_else(|| Error::FailedPrecondition("module is not running".to_string()))?;
+        // fd.kill(signal as i32)
+        Ok(())
     }
 
     fn delete(&self) -> Result<(), Error> {
-        let spec = match load_spec(self.bundle.clone()) {
+        let spec = match load_spec(self.spec.clone(),self.bundle.clone()) {
             Ok(spec) => spec,
             Err(err) => {
                 error!("Could not load spec, skipping cgroup cleanup: {}", err);
@@ -310,6 +325,8 @@ mod wasitest {
         let dir = tempdir()?;
         create_dir(dir.path().join("rootfs"))?;
 
+        println!("dir: {:?}", dir.path());
+
         let mut f = File::create(dir.path().join("rootfs/hello.wat"))?;
         f.write_all(WASI_HELLO_WAT)?;
 
@@ -331,7 +348,7 @@ mod wasitest {
         let mut cfg = InstanceConfig::new(Engine::default());
         let cfg = cfg
             .set_bundle(dir.path().to_str().unwrap().to_string())
-            .set_stdout(dir.path().join("stdout").to_str().unwrap().to_string());
+            .set_stdout(dir.path().join("stdout").to_str().unwrap().to_string()).set_spec(spec);
 
         let wasi = Arc::new(Wasi::new("test".to_string(), Some(cfg)));
 
@@ -346,7 +363,7 @@ mod wasitest {
         let res = match rx.recv_timeout(Duration::from_secs(10)) {
             Ok(res) => res,
             Err(e) => {
-                wasi.kill(SIGKILL as u32).unwrap();
+                wasi.kill(9).unwrap();
                 return Err(Error::Others(format!(
                     "error waiting for module to finish: {0}",
                     e

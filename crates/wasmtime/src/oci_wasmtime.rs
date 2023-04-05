@@ -1,4 +1,5 @@
 use std::fs::OpenOptions;
+use std::os::windows::prelude::OpenOptionsExt;
 use std::path::Path;
 
 use anyhow::Context;
@@ -7,10 +8,11 @@ use containerd_shim_wasm::sandbox::{error::Error, oci};
 use oci_spec::runtime::Spec;
 use wasmtime_wasi::sync::file::File as WasiFile;
 use wasmtime_wasi::{Dir as WasiDir, WasiCtxBuilder};
+use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
 
 pub fn get_rootfs(spec: &Spec) -> Result<WasiDir, Error> {
     let path = oci::get_root(spec).to_str().unwrap();
-    let rootfs = wasi_dir(path, OpenOptions::new().read(true))?;
+    let rootfs = wasi_dir(path, OpenOptions::new().custom_flags(FILE_FLAG_BACKUP_SEMANTICS).read(true))?;
     Ok(rootfs)
 }
 
