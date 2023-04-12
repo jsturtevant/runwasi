@@ -208,7 +208,7 @@ impl Instance for Wasi {
         let _ = thread::spawn(move || {
             //wait for exit
             loop {
-                debug!("wasi instance started ");
+                //debug!("wasi instance started ");
             }
             
             //debug!("wasi instance exited with status ");

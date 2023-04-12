@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 nix = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = {version = "0.45", features = [ "Win32_Foundation", "Win32_Storage_FileSystem"]}
+windows-sys = {version = "0.48", features = [ "Win32_Foundation", "Win32_Storage_FileSystem"]}
 
 [dev-dependencies]
 tempfile = "3.0"

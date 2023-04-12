@@ -23,6 +23,7 @@ env_logger = "0.10"
 log = "0.4"
 tar = "0.4"
 containerd-shim = { path = "../rust-extensions/crates/shim/" }
+#ttrpc = { git = "https://github.com/containerd/ttrpc-rust", branch = "master"}
 ttrpc =   { path = "../ttrpc-rust" }
 chrono = "0.4"
 nix = "0.26"

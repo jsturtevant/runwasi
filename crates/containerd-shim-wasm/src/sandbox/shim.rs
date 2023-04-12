@@ -18,7 +18,7 @@ use windows_sys::Win32::System::Threading::WaitForSingleObject;
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::{CreateEventW, SetEvent};
 #[cfg(windows)]
-use windows_sys::Win32::System::WindowsProgramming::INFINITE;
+use windows_sys::Win32::System::Threading::INFINITE;
 #[cfg(windows)]
 use std::ffi::OsStr;
 #[cfg(windows)]
@@ -749,7 +749,8 @@ fn setup_debugger_event(){
         }
     };
     match unsafe { WaitForSingleObject(e, INFINITE) } {
-        0 => {},
+        0 => {
+        },
         _ => {
             error!("failed to wait for debugger event: {}", io::Error::last_os_error());
             return;
@@ -834,7 +835,7 @@ where
     }
 
     fn task_create(&self, req: api::CreateTaskRequest) -> Result<api::CreateTaskResponse> {
-        //setup_debugger_event();
+        setup_debugger_event();
         
         if !req.checkpoint().is_empty() || !req.parent_checkpoint().is_empty() {
             return Err(ShimError::Unimplemented("checkpoint is not supported".to_string()).into());
@@ -891,19 +892,28 @@ where
             }
         }
 
+        let mut b = Root::default();
+        let r = b.set_path(PathBuf::from(""));
+        spec.set_root(Some(r.to_owned()));
+
         spec.canonicalize_rootfs(req.bundle()).map_err(|err| {
             ShimError::InvalidArgument(format!("could not canonicalize rootfs: {}", err))
         })?;
 
         let rootfs_mounts = req.rootfs().to_vec();
-        let windows_file = rootfs_mounts[0].options[1].strip_prefix("parentLayerPaths=").unwrap();
+        if rootfs_mounts.len() >= 1 {
+            let windows_file = rootfs_mounts[0].options[1].strip_prefix("parentLayerPaths=").unwrap();
 
-        let parent_layers: Value = serde_json::from_str(&windows_file)?;
-        let layer = &parent_layers[0];
-        
-        let mut b = Root::default();
-        let r = b.set_path(PathBuf::from_str(layer.as_str().unwrap()).unwrap());
-        spec.set_root(Some(r.to_owned()));
+            let parent_layers: Value = serde_json::from_str(&windows_file)?;
+            let layer = &parent_layers[0];
+            let layer_path =  PathBuf::from_str(layer.as_str().unwrap()).unwrap();
+            let windows_layer = layer_path.join("Files");
+            
+            let mut b = Root::default();
+            let r = b.set_path(windows_layer);
+            spec.set_root(Some(r.to_owned()));
+        }
+     
         
 
         let rootfs = spec
@@ -1282,7 +1292,7 @@ where
 
     fn start(
         &self,
-        _ctx: &::ttrpc::TtrpcContext,
+        _ctx: &TtrpcContext,
         req: api::StartRequest,
     ) -> TtrpcResult<api::StartResponse> {
         debug!("start: {:?}", req);
