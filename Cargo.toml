@@ -30,7 +30,7 @@ nix = "0.26"
 cap-std = "0.26"
 thiserror = "1.0"
 libc = "0.2.138"
-oci-spec = "0.6"
+oci-spec = { path = "../oci-spec-rs" }
 sha256 = "1.1"
 
 [profile.release]

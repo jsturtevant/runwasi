@@ -184,21 +184,37 @@ mod ocitests {
         "ociVersion": "1.0.2-dev",
         "process": {
             "user": {
+                "uid": 0,
+                "gid": 0,
                 "username": "ContainerUser"
             },
             "args": [
-                "/wasi-demo-app.wasm"
+                "/wasi-demo.wasm"
             ],
-            "cwd": ""
+            "env": [
+                "PATH=C:\\Windows\\system32;C:\\Windows;"
+            ],
+            "cwd": "C:\\"
         },
-        "root": {
-            "path": ""
+        "hostname": "wasm-slight-5cd4ccd9f6-h5qg7",
+        "annotations": {
+            "io.kubernetes.cri.container-type": "sandbox",
+            "io.kubernetes.cri.sandbox-id": "86368ccee50007b0c91cf6f9c4d4a9d98880cfb110030a54cbfcdbdb9c23fec5",
+            "io.kubernetes.cri.sandbox-log-directory": "\\var\\log\\pods\\default_wasm-slight-5cd4ccd9f6-h5qg7_d4dcecf7-d6b4-40af-930e-b290008bbd73",
+            "io.kubernetes.cri.sandbox-name": "wasm-slight-5cd4ccd9f6-h5qg7",
+            "io.kubernetes.cri.sandbox-namespace": "default",
+            "io.kubernetes.cri.sandbox-uid": "d4dcecf7-d6b4-40af-930e-b290008bbd73",
+            "microsoft.com/hostprocess-container": "false"
         },
         "windows": {
             "layerFolders": null,
-            "ignoreFlushesDuringBoot": true,
+            "resources": {
+                "cpu": {
+                    "shares": 2
+                }
+            },
             "network": {
-                "allowUnqualifiedDNSQuery": true
+                "networkNamespace": "1124faf5-e1d3-43fe-b758-8e99e5b7fa02"
             }
         }
     }

@@ -300,7 +300,7 @@ dependencies = [
  "log",
  "mio",
  "nix 0.26.2",
- "oci-spec",
+ "oci-spec 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "page_size",
  "prctl",
  "regex",
@@ -336,7 +336,7 @@ dependencies = [
  "libc",
  "log",
  "nix 0.26.2",
- "oci-spec",
+ "oci-spec 0.6.0",
  "pretty_assertions",
  "proc-mounts",
  "protobuf 3.2.0",
@@ -1306,6 +1306,17 @@ dependencies = [
 [[package]]
 name = "oci-spec"
 version = "0.6.0"
+dependencies = [
+ "derive_builder",
+ "getset",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "oci-spec"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "214b837f7dde5026f2028ead5ae720073277c19f82ff85623b142c39d4b843e7"
 dependencies = [
@@ -1323,7 +1334,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
- "oci-spec",
+ "oci-spec 0.6.0",
  "serde",
  "serde_json",
  "sha256",
@@ -1731,7 +1742,7 @@ dependencies = [
  "libc",
  "log",
  "nix 0.26.2",
- "oci-spec",
+ "oci-spec 0.6.0",
  "pretty_assertions",
  "serde_json",
  "tempfile",
@@ -2233,7 +2244,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
- "oci-spec",
+ "oci-spec 0.6.0",
  "oci-tar-builder",
  "sha256",
  "tar",

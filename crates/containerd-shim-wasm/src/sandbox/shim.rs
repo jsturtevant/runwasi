@@ -13,6 +13,7 @@ use std::{thread, io};
 use std::process;
 
 use serde_json::Value;
+use shim::info;
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::WaitForSingleObject;
 #[cfg(windows)]
@@ -933,79 +934,6 @@ where
             // }
         }
 
-        let default_mounts = vec![];
-        let mounts = spec.mounts().as_ref().unwrap_or(&default_mounts);
-        for m in mounts {
-            if m.typ().is_some() {
-                match m.typ().as_ref().unwrap().as_str() {
-                    "tmpfs" | "proc" | "cgroup" | "sysfs" | "devpts" | "mqueue" => continue,
-                    _ => (),
-                };
-            };
-
-            let source = m.source().as_deref().map(|x| x.to_str()).unwrap_or(None);
-            let target = m
-                .destination()
-                .strip_prefix(std::path::MAIN_SEPARATOR.to_string())
-                .map_err(|err| {
-                    ShimError::InvalidArgument(format!("error stripping path prefix: {}", err))
-                })?;
-
-            let rootfs_target = Path::new(rootfs).join(target);
-
-            if source.is_some() {
-                let md = fs::metadata(source.unwrap()).map_err(|err| {
-                    Error::InvalidArgument(format!("could not get metadata for source: {}", err))
-                })?;
-
-                if md.is_dir() {
-                    fs::create_dir_all(&rootfs_target).map_err(|err| {
-                        ShimError::Other(format!(
-                            "error creating directory for mount target {}: {}",
-                            target.to_str().unwrap(),
-                            err
-                        ))
-                    })?;
-                } else {
-                    let parent = rootfs_target.parent();
-                    if parent.is_some() {
-                        fs::create_dir_all(parent.unwrap()).map_err(|err| {
-                            ShimError::Other(format!(
-                                "error creating parent for mount target {}: {}",
-                                parent.unwrap().to_str().unwrap(),
-                                err
-                            ))
-                        })?;
-                    }
-                    File::create(&rootfs_target)
-                        .map_err(|err| ShimError::Other(format!("{}", err)))?;
-                }
-            }
-
-            let mut newopts = vec![];
-            let opts = m.options().as_ref();
-            if let Some(os) = opts {
-                for o in os {
-                    newopts.push(o.to_string());
-                }
-            }
-
-            let mut typ = m.typ().as_deref();
-            if typ.is_some() && typ.unwrap() == "bind" {
-                typ = None;
-                newopts.push("rbind".to_string());
-            }
-            mount_rootfs(typ, source, &newopts, &rootfs_target).map_err(|err| {
-                ShimError::Other(format!(
-                    "error mounting {} to {} as {}: {}",
-                    source.unwrap_or_default(),
-                    rootfs_target.to_str().unwrap(),
-                    m.typ().as_deref().unwrap_or("none"),
-                    err
-                ))
-            })?;
-        }
-
         let engine = self.engine.clone();
         let mut builder = InstanceConfig::new(engine);
         builder
@@ -1435,8 +1363,19 @@ where
     }
 
     fn start_shim(&mut self, opts: containerd_shim::StartOpts) -> shim::Result<String> {
+        //setup_debugger_event();
+
         let dir = current_dir().map_err(|err| ShimError::Other(err.to_string()))?;
-        let spec = oci::load(dir.join("config.json").to_str().unwrap()).map_err(|err| {
+
+        let binding = dir.join("config.json");
+        let config_path = binding.to_str().unwrap();
+
+        // let config = fs::read_to_string(config_path).unwrap();
+        // info!("jjs config: {:?}", config);
+
+        // fs::write("c:\\tmp.json", config.as_str()).unwrap();
+        
+        let spec = oci::load(config_path).map_err(|err| {
             shim::Error::InvalidArgument(format!("error loading runtime spec in dir {}: {}",dir.to_str().unwrap(), err))
         })?;
 
@@ -1464,75 +1403,6 @@ where
         // )
         // .map_err(|err| shim::Error::Other(format!("failed to remount rootfs as slave: {}", err)))?;
 
-        if let Some(mounts) = spec.mounts() {
-            for m in mounts {
-                match m.typ().as_ref() {
-                    None => return Err(shim::Error::Other("No mount type specified".to_string())),
-                    Some(mount_type) => {
-                        if mount_type != "bind" {
-                            continue;
-                        }
-                    }
-                }
-
-                let dest = m.destination();
-                let source = m
-                    .source()
-                    .as_ref()
-                    .ok_or_else(|| shim::Error::Other("No source mount path".to_string()))?;
-
-                let src = canonicalize(source).map_err(|err| {
-                    shim::Error::Other(format!(
-                        "Failed to canonicalize the source file path: {}",
-                        err
-                    ))
-                })?;
-
-                let dir = if src.is_file() {
-                    Path::new(&dest).parent().ok_or_else(|| {
-                        shim::Error::Other("Invalid destination file path".to_string())
-                    })?
-                } else {
-                    Path::new(&dest)
-                };
-
-                create_dir_all(dir).map_err(|err| {
-                    shim::Error::Other(format!(
-                        "Failed to create destination directory structure: {}",
-                        err
-                    ))
-                })?;
-
-                // Create target file for bind mount
-                if src.is_file() {
-                    OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .open(dest)
-                        .map_err(|err| {
-                            shim::Error::Other(format!(
-                                "failed to create bind mount destination file: {}",
-                                err
-                            ))
-                        })?;
-                }
-
-                #[cfg(unix)]
-                mount::<str, Path, str, str>(
-                    Some(&src.to_string_lossy()),
-                    dest,
-                    None,
-                    parse_mount(m),
-                    None,
-                )
-                .map_err(|err| {
-                    shim::Error::Other(format!(
-                        "failed to mount targets that list in spec.mount: {}",
-                        err
-                    ))
-                })?;
-            }
-        }
 
         let (_child, address) = shim::spawn(opts, &grouping, envs)?;
 
