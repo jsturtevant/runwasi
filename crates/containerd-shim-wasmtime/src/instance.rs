@@ -1,10 +1,12 @@
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, File};
+use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
+use client::tonic::{Streaming, self};
 use containerd_shim_wasm::sandbox::error::Error;
 use containerd_shim_wasm::sandbox::exec;
 use containerd_shim_wasm::sandbox::instance::Wait;
@@ -12,11 +14,20 @@ use containerd_shim_wasm::sandbox::oci;
 use containerd_shim_wasm::sandbox::{EngineGetter, Instance, InstanceConfig};
 use log::{debug, error};
 use nix::sys::signal::SIGKILL;
+use ttrpc::context::with_metadata;
 use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{sync::file::File as WasiFile, WasiCtx, WasiCtxBuilder};
 
 use super::error::WasmtimeError;
 use super::oci_wasmtime;
+use tokio::runtime::Runtime;
+
+use tonic::Request;
+use client::{
+    with_namespace,
+    services::v1::{ReadContentRequest, ReadContentResponse, content_client::ContentClient}
+};
+use containerd_client as client;
 
 type ExitCode = (Mutex<Option<(u32, DateTime<Utc>)>>, Condvar);
 pub struct Wasi {
@@ -73,7 +84,7 @@ pub fn maybe_open_stdio(path: &str) -> Result<Option<WasiFile>, Error> {
         },
     }
 }
-
+        
 fn load_spec(bundle: String) -> Result<oci::Spec, Error> {
     let mut spec = oci::load(Path::new(&bundle).join("config.json").to_str().unwrap())?;
     spec.canonicalize_rootfs(&bundle)
@@ -121,22 +132,63 @@ pub fn prepare_module(
     let wctx = wasi_builder.build();
     debug!("wasi context ready");
 
-    let start = args[0].clone();
-    let mut iterator = start.split('#');
-    let mut cmd = iterator.next().unwrap().to_string();
+   
+    debug!("loading module from file within container");
+    let mut method = "_start".to_string();
+    let mut cmd = "".to_string();
+    if args.len() > 0 {
+        let start = args[0].clone();
+        let mut iterator = start.split('#');
+        cmd = iterator.next().unwrap().to_string();
 
-    let stripped = cmd.strip_prefix(std::path::MAIN_SEPARATOR);
-    if let Some(strpd) = stripped {
-        cmd = strpd.to_string();
+        let stripped = cmd.strip_prefix(std::path::MAIN_SEPARATOR);
+        if let Some(strpd) = stripped {
+            cmd = strpd.to_string();
+        }
+        let m = iterator.next().unwrap_or("_start").to_string();
+        method = m;
     }
-    let method = iterator.next().unwrap_or("_start");
 
-    let mod_path = oci::get_root(spec).join(cmd);
-    debug!("loading module from file");
-    let module = Module::from_file(&engine, mod_path)
-        .map_err(|err| Error::Others(format!("could not load module from file: {}", err)))?;
+     match spec.annotations().clone() {
+        Some(annotations) if annotations.contains_key("application/vnd.w3c.wasm.module.v1+wasm")  => {
+            println!("loading module from annotations");
 
-    Ok((wctx, module, method.to_string()))
+            let rt = Runtime::new().unwrap();
+            let result: Result<Module, Box<dyn std::error::Error>> =  rt.block_on(async {
+                let channel = client::connect("/run/containerd/containerd.sock").await?;
+
+                let containerd_module = annotations.get("application/vnd.w3c.wasm.module.v1+wasm").unwrap();
+        
+                let mut c = ContentClient::new(channel);
+                
+                let req = ReadContentRequest{digest : containerd_module.to_string(), offset: 0, size:0};
+                let req = with_namespace!(req, "default");
+                let  response:  tonic::Response<tonic::codec::Streaming<ReadContentResponse>> =  c.read(req).await?;
+                let mut resp_stream = response.into_inner();
+
+                let mut mvec = vec![];
+                while let Some(mut next_message) = resp_stream.message().await? {
+                    mvec.append(&mut next_message.data);
+
+                }
+                let module = Module::from_binary(&engine, &mvec).map_err(|err| Error::Others(format!("could not load module from file: {}", err)))?;
+                Ok(module)
+            });
+
+            let module = result.unwrap();
+            return Ok((wctx, module, method.to_string()))
+        }
+        Some(_) | None => {
+            if cmd == "" {
+                return Err(WasmtimeError::Other(anyhow::format_err!("no args provided, cannot load module from file within container")))
+            }
+            let mod_path = oci::get_root(spec).join(cmd);
+            let module = Module::from_file(&engine, mod_path)
+                .map_err(|err| Error::Others(format!("could not load module from file: {}", err)))?;
+
+            return Ok((wctx, module, method.to_string()))
+        },
+    };
 }
 
 impl Instance for Wasi {
@@ -275,7 +327,7 @@ mod wasitest {
     use containerd_shim_wasm::sandbox::instance::Wait;
     use oci_spec::runtime::{ProcessBuilder, RootBuilder, SpecBuilder};
     use tempfile::tempdir;
-
+    use std::collections::HashMap;
     use super::*;
 
     // This is taken from https://github.com/bytecodealliance/wasmtime/blob/6a60e8363f50b936e4c4fc958cb9742314ff09f3/docs/WASI-tutorial.md?plain=1#L270-L298
@@ -325,6 +377,7 @@ mod wasitest {
         let dir = tempdir()?;
         create_dir(dir.path().join("rootfs"))?;
 
+        println!("dir: {:?}", dir.path());
         let mut f = File::create(dir.path().join("rootfs/hello.wat"))?;
         f.write_all(WASI_HELLO_WAT)?;
 
@@ -336,13 +389,18 @@ mod wasitest {
             .process(
                 ProcessBuilder::default()
                     .cwd("/")
-                    .args(vec!["hello.wat".to_string()])
+                    .args(vec![])
+                    .args(vec!["hello.wat".to_string(), "echo".to_string(), "hello world".to_string()])
                     .build()?,
             )
+            .annotations(HashMap::from([
+                ("application/vnd.w3c.wasm.module.v1+wasm".to_string(), "sha256:1c7d1fac62d3af14c905d95b528494cd1d2d120b799d4bd3219eb1961f3b980f".to_string()),
+            ]))
             .build()?;
 
-        spec.save(dir.path().join("config.json"))?;
 
+        spec.save(dir.path().join("config.json"))?;
+        //thread::sleep(Duration::from_secs(20));
         let mut cfg = InstanceConfig::new(Engine::default(), "test_namespace".into());
         let cfg = cfg
             .set_bundle(dir.path().to_str().unwrap().to_string())
@@ -375,6 +433,7 @@ mod wasitest {
 
         Ok(())
     }
+
 }
 
 impl EngineGetter for Wasi {
