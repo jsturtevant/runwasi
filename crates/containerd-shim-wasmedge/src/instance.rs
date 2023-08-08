@@ -1,25 +1,22 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::ErrorKind;
-use std::os::unix::io::RawFd;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use anyhow::Context;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
+use containerd_shim_wasm::cfg_unix;
 use containerd_shim_wasm::sandbox::error::Error;
 use containerd_shim_wasm::sandbox::instance::Wait;
 use containerd_shim_wasm::sandbox::instance_utils::{
     get_instance_root, instance_exists, maybe_open_stdio,
 };
 use containerd_shim_wasm::sandbox::{EngineGetter, Instance, InstanceConfig};
-use libc::{dup2, SIGINT, SIGKILL, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
+
 use log::{debug, error};
-use nix::errno::Errno;
-use nix::sys::signal::Signal as NixSignal;
-use nix::sys::wait::{waitid, Id as WaitID, WaitPidFlag, WaitStatus};
-use nix::unistd::close;
+
 use serde::{Deserialize, Serialize};
 use wasmedge_sdk::{
     config::{CommonConfigOptions, ConfigBuilder, HostRegistrationConfigOptions},
@@ -27,21 +24,26 @@ use wasmedge_sdk::{
     Vm, VmBuilder,
 };
 
+cfg_unix! {
+    use libcontainer::container::builder::ContainerBuilder;
+    use libcontainer::container::{Container, ContainerStatus};
+    use libcontainer::signal::Signal;
+    use libcontainer::syscall::syscall::create_syscall;
+
+    use crate::executor::WasmEdgeExecutor;
+    use libc::{SIGINT, SIGKILL};
+
+    use nix::errno::Errno;
+    use nix::sys::signal::Signal as NixSignal;
+    use nix::sys::wait::{waitid, Id as WaitID, WaitPidFlag, WaitStatus};
+    use nix::unistd::close;
+    use std::os::fd::IntoRawFd;
+}
+
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-
-use libcontainer::container::builder::ContainerBuilder;
-use libcontainer::container::{Container, ContainerStatus};
-use libcontainer::signal::Signal;
-use libcontainer::syscall::syscall::create_syscall;
-
-use crate::executor::WasmEdgeExecutor;
-
-static mut STDIN_FD: Option<RawFd> = None;
-static mut STDOUT_FD: Option<RawFd> = None;
-static mut STDERR_FD: Option<RawFd> = None;
 
 static DEFAULT_CONTAINER_ROOT_DIR: &str = "/run/containerd/wasmedge";
 
@@ -57,20 +59,6 @@ pub struct Wasi {
     bundle: String,
 
     rootdir: PathBuf,
-}
-
-pub fn reset_stdio() {
-    unsafe {
-        if STDIN_FD.is_some() {
-            dup2(STDIN_FD.unwrap(), STDIN_FILENO);
-        }
-        if STDOUT_FD.is_some() {
-            dup2(STDOUT_FD.unwrap(), STDOUT_FILENO);
-        }
-        if STDERR_FD.is_some() {
-            dup2(STDERR_FD.unwrap(), STDERR_FILENO);
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -119,73 +107,96 @@ impl Instance for Wasi {
 
         fs::create_dir_all(&self.rootdir)?;
 
-        let stdin = maybe_open_stdio(self.stdin.as_str()).context("could not open stdin")?;
-        let stdout = maybe_open_stdio(self.stdout.as_str()).context("could not open stdout")?;
-        let stderr = maybe_open_stdio(self.stderr.as_str()).context("could not open stderr")?;
-        let mut container = self.build_container(stdin, stdout, stderr)?;
+        #[cfg(unix)]
+        {
+            let stdin = maybe_open_stdio(self.stdin.as_str())
+                .context("could not open stdin")?
+                .map(|f| f.into_raw_fd());
+            let stdout = maybe_open_stdio(self.stdout.as_str())
+                .context("could not open stdout")?
+                .map(|f| f.into_raw_fd());
+            let stderr = maybe_open_stdio(self.stderr.as_str())
+                .context("could not open stderr")?
+                .map(|f| f.into_raw_fd());
+            let mut container = self.build_container(stdin, stdout, stderr)?;
 
-        let code = self.exit_code.clone();
-        let pid = container.pid().unwrap();
+            let code = self.exit_code.clone();
+            let pid = container.pid().unwrap();
 
-        // Close the fds now that they have been passed to the container process
-        // so that we don't leak them.
-        stdin.map(close);
-        stdout.map(close);
-        stderr.map(close);
+            // Close the fds now that they have been passed to the container process
+            // so that we don't leak them.
+            stdin.map(close);
+            stdout.map(close);
+            stderr.map(close);
 
-        container
-            .start()
-            .map_err(|err| Error::Any(anyhow!("failed to start container: {}", err)))?;
+            container
+                .start()
+                .map_err(|err| Error::Any(anyhow!("failed to start container: {}", err)))?;
 
-        thread::spawn(move || {
-            let (lock, cvar) = &*code;
+            thread::spawn(move || {
+                let (lock, cvar) = &*code;
 
-            let status = match waitid(WaitID::Pid(pid), WaitPidFlag::WEXITED) {
-                Ok(WaitStatus::Exited(_, status)) => status,
-                Ok(WaitStatus::Signaled(_, sig, _)) => sig as i32,
-                Ok(_) => 0,
-                Err(e) => {
-                    if e == Errno::ECHILD {
-                        log::info!("no child process");
-                        0
-                    } else {
-                        panic!("waitpid failed: {}", e);
+                let status = match waitid(WaitID::Pid(pid), WaitPidFlag::WEXITED) {
+                    Ok(WaitStatus::Exited(_, status)) => status,
+                    Ok(WaitStatus::Signaled(_, sig, _)) => sig as i32,
+                    Ok(_) => 0,
+                    Err(e) => {
+                        if e == Errno::ECHILD {
+                            log::info!("no child process");
+                            0
+                        } else {
+                            panic!("waitpid failed: {}", e);
+                        }
                     }
-                }
-            } as u32;
-            let mut ec = lock.lock().unwrap();
-            *ec = Some((status, Utc::now()));
-            drop(ec);
-            cvar.notify_all();
-        });
+                } as u32;
+                let mut ec = lock.lock().unwrap();
+                *ec = Some((status, Utc::now()));
+                drop(ec);
+                cvar.notify_all();
+            });
 
-        Ok(pid.as_raw() as u32)
+            Ok(pid.as_raw() as u32)
+        }
+        #[cfg(windows)]
+        {
+            unimplemented!()
+        }
     }
 
     fn kill(&self, signal: u32) -> Result<(), Error> {
-        let signal: Signal = match signal as i32 {
-            SIGKILL => NixSignal::SIGKILL.into(),
-            SIGINT => NixSignal::SIGINT.into(),
-            _ => Err(Error::InvalidArgument(
-                "only SIGKILL and SIGINT are supported".to_string(),
-            ))?,
-        };
+        #[cfg(unix)]
+        {
+            let signal: Signal = match signal as i32 {
+                SIGKILL => NixSignal::SIGKILL.into(),
+                SIGINT => NixSignal::SIGINT.into(),
+                _ => Err(Error::InvalidArgument(
+                    "only SIGKILL and SIGINT are supported".to_string(),
+                ))?,
+            };
 
-        let container_root = get_instance_root(&self.rootdir, self.id.as_str())?;
-        let mut container = Container::load(container_root).with_context(|| {
-            format!(
-                "could not load state for container {id}",
-                id = self.id.as_str()
-            )
-        })?;
-        match container.kill(signal, true) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                if container.status() == ContainerStatus::Stopped {
-                    return Err(Error::Others("container not running".into()));
+            let container_root = get_instance_root(&self.rootdir, self.id.as_str())?;
+            let mut container = Container::load(container_root).with_context(|| {
+                format!(
+                    "could not load state for container {id}",
+                    id = self.id.as_str()
+                )
+            })?;
+            match container.kill(signal, true) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if container.status() == ContainerStatus::Stopped {
+                        return Err(Error::Others("container not running".into()));
+                    }
+                    Err(Error::Others(e.to_string()))
                 }
-                Err(Error::Others(e.to_string()))
             }
+        }
+
+        #[cfg(windows)]
+        {
+            Err(Error::Any(anyhow::anyhow!(
+                "kill is not supported on windows"
+            )))
         }
     }
 
@@ -201,20 +212,23 @@ impl Instance for Wasi {
                 return Ok(());
             }
         }
-        let container_root = get_instance_root(&self.rootdir, self.id.as_str())?;
-        let container = Container::load(container_root).with_context(|| {
-            format!(
-                "could not load state for container {id}",
-                id = self.id.as_str()
-            )
-        });
-        match container {
-            Ok(mut container) => container.delete(true).map_err(|err| {
-                Error::Any(anyhow!("failed to delete container {}: {}", self.id, err))
-            })?,
-            Err(err) => {
-                error!("could not find the container, skipping cleanup: {}", err);
-                return Ok(());
+        #[cfg(unix)]
+        {
+            let container_root = get_instance_root(&self.rootdir, self.id.as_str())?;
+            let container = Container::load(container_root).with_context(|| {
+                format!(
+                    "could not load state for container {id}",
+                    id = self.id.as_str()
+                )
+            });
+            match container {
+                Ok(mut container) => container.delete(true).map_err(|err| {
+                    Error::Any(anyhow!("failed to delete container {}: {}", self.id, err))
+                })?,
+                Err(err) => {
+                    error!("could not find the container, skipping cleanup: {}", err);
+                    return Ok(());
+                }
             }
         }
 
@@ -227,6 +241,7 @@ impl Instance for Wasi {
     }
 }
 
+#[cfg(unix)]
 impl Wasi {
     fn build_container(
         &self,
@@ -275,7 +290,6 @@ impl EngineGetter for Wasi {
 mod wasitest {
     use std::borrow::Cow;
     use std::fs::{create_dir, read_to_string, File, OpenOptions};
-    use std::os::unix::prelude::OpenOptionsExt;
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
@@ -284,9 +298,41 @@ mod wasitest {
     use oci_spec::runtime::{ProcessBuilder, RootBuilder, SpecBuilder};
     use tempfile::{tempdir, TempDir};
 
+    cfg_unix!(
+        use libc::{dup2, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
+        use std::os::unix::prelude::OpenOptionsExt;
+        use std::os::fd::RawFd;
+    );
+
     use serial_test::serial;
 
     use super::*;
+
+    cfg_unix! {
+        static mut STDIN_FD: Option<RawFd> = None;
+        static mut STDOUT_FD: Option<RawFd> = None;
+        static mut STDERR_FD: Option<RawFd> = None;
+    }
+
+    #[cfg(windows)]
+    const SIGKILL: u32 = 9;
+
+    pub fn reset_stdio() {
+        #[cfg(unix)]
+        {
+            unsafe {
+                if STDIN_FD.is_some() {
+                    dup2(STDIN_FD.unwrap(), STDIN_FILENO);
+                }
+                if STDOUT_FD.is_some() {
+                    dup2(STDOUT_FD.unwrap(), STDOUT_FILENO);
+                }
+                if STDERR_FD.is_some() {
+                    dup2(STDERR_FD.unwrap(), STDERR_FILENO);
+                }
+            }
+        }
+    }
 
     use wasmedge_sdk::{
         config::{CommonConfigOptions, ConfigBuilder},
@@ -347,12 +393,14 @@ mod wasitest {
         write!(&opts_file, "{}", serde_json::to_string(&opts)?)?;
 
         let wasm_path = dir.path().join("rootfs/hello.wasm");
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o755)
-            .open(wasm_path)?;
+        let mut f = OpenOptions::new();
+
+        f.write(true).create(true).truncate(true);
+
+        #[cfg(unix)]
+        f.mode(0o755);
+
+        let mut f = f.open(wasm_path)?;
         f.write_all(&wasmbytes)?;
 
         let stdout = File::create(dir.path().join("stdout"))?;

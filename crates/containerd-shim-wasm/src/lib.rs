@@ -5,4 +5,5 @@
 
 pub mod sandbox;
 
+mod macros;
 pub mod services;

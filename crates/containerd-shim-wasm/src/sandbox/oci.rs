@@ -5,13 +5,17 @@ use std::path::{Path, PathBuf};
 
 use super::error::Result;
 use anyhow::Context;
-use nix::{sys::signal, unistd::Pid};
+
 pub use oci_spec::runtime::Spec;
 use serde_json as json;
 use std::collections::HashMap;
 use std::io::{ErrorKind, Write};
-use std::os::unix::process::CommandExt;
 use std::process;
+
+#[cfg(unix)]
+use nix::{sys::signal, unistd::Pid};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 pub fn load(path: &str) -> Result<Spec> {
     let spec = Spec::load(path)?;
@@ -64,14 +68,27 @@ pub fn setup_prestart_hooks(hooks: &Option<oci_spec::runtime::Hooks>) -> Result<
             // Based on OCI spec, the first argument of the args vector is the
             // arg0, which can be different from the path.  For example, path
             // may be "/usr/bin/true" and arg0 is set to "true". However, rust
-            // command differenciates arg0 from args, where rust command arg
+            // command differentiates arg0 from args, where rust command arg
             // doesn't include arg0. So we have to make the split arg0 from the
             // rest of args.
             if let Some((arg0, args)) = hook.args().as_ref().and_then(|a| a.split_first()) {
                 log::debug!("run_hooks arg0: {:?}, args: {:?}", arg0, args);
-                hook_command.arg0(arg0).args(args)
+
+                #[cfg(unix)]
+                hook_command.arg0(arg0).args(args);
+
+                #[cfg(windows)]
+                if !&hook.path().ends_with(arg0) {
+                    log::debug!("Running with arg0 as different name than executable is not supported on Windows due to rust std library process implementation.");
+                } else {
+                    hook_command.args(args);
+                };
             } else {
-                hook_command.arg0(&hook.path().display().to_string())
+                #[cfg(unix)]
+                hook_command.arg0(&hook.path().display().to_string());
+
+                #[cfg(windows)]
+                log::debug!("Running with hook path as process");
             };
 
             let envs: HashMap<String, String> = if let Some(env) = hook.env() {
@@ -87,7 +104,6 @@ pub fn setup_prestart_hooks(hooks: &Option<oci_spec::runtime::Hooks>) -> Result<
                 .stdin(process::Stdio::piped())
                 .spawn()
                 .with_context(|| "Failed to execute hook")?;
-            let hook_process_pid = Pid::from_raw(hook_process.id() as i32);
 
             if let Some(stdin) = &mut hook_process.stdin {
                 // We want to ignore BrokenPipe here. A BrokenPipe indicates
@@ -103,7 +119,16 @@ pub fn setup_prestart_hooks(hooks: &Option<oci_spec::runtime::Hooks>) -> Result<
                     if e.kind() != ErrorKind::BrokenPipe {
                         // Not a broken pipe. The hook command may be waiting
                         // for us.
-                        let _ = signal::kill(hook_process_pid, signal::Signal::SIGKILL);
+                        #[cfg(unix)]
+                        {
+                            let hook_process_pid = Pid::from_raw(hook_process.id() as i32);
+                            let _ = signal::kill(hook_process_pid, signal::Signal::SIGKILL);
+                        }
+
+                        #[cfg(windows)]
+                        {
+                            let _ = hook_process.kill();
+                        }
                     }
                 }
             }

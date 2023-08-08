@@ -509,6 +509,7 @@ name = "containerd-shim-wasm"
 version = "0.2.1"
 dependencies = [
  "anyhow",
+ "cap-std",
  "caps",
  "cgroups-rs 0.3.3",
  "chrono",

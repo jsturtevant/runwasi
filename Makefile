@@ -10,6 +10,15 @@ ifeq ($(TARGET),release)
 RELEASE_FLAG = --release
 endif
 
+FEATURES := 
+WARNINGS := -D warnings
+ifeq ($(OS), Windows_NT)
+# need to turn off static/standalone for wasm-edge
+FEATURES = --no-default-features
+# turn of warnings until windows is fully supported
+WARNINGS = 
+endif
+
 DOCKER_BUILD ?= docker buildx build
 
 KIND_CLUSTER_NAME ?= containerd-wasm
@@ -17,17 +26,17 @@ KIND_CLUSTER_NAME ?= containerd-wasm
 .PHONY: build
 build:
 	cargo build -p containerd-shim-wasm --features generate_bindings $(RELEASE_FLAG)
-	cargo build $(RELEASE_FLAG)
+	cargo build $(FEATURES) $(RELEASE_FLAG)
 
 .PHONY: check
 check:
 	cargo fmt --all -- --check
-	cargo clippy --all --all-targets -- -D warnings
+	cargo clippy --all --all-targets -- $(WARNINGS)
 
 .PHONY: fix
 fix:
 	cargo fmt --all
-	cargo clippy --fix --all --all-targets -- -D warnings
+	cargo clippy $(FEATURES) --fix --all --all-targets -- $(WARNINGS)
 
 .PHONY: test
 test:

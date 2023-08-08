@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use nix::unistd::{dup, dup2};
 use std::{fs::OpenOptions, os::fd::RawFd};
 
@@ -56,7 +58,7 @@ impl WasmtimeExecutor {
     ) -> anyhow::Result<(Store<wasi_common::WasiCtx>, wasmtime::Func)> {
         // already in the cgroup
         let env = oci_wasmtime::env_to_wasi(spec);
-        log::info!("setting up wasi");
+        log::info!("setting up wasi!!!!");
 
         let path = wasi_dir(".", OpenOptions::new().read(true))?;
         let wasi_builder = WasiCtxBuilder::new()
@@ -65,11 +67,14 @@ impl WasmtimeExecutor {
             .inherit_stdio()
             .preopened_dir(path, "/")?;
 
+        log::info!("starting stdout");
         if let Some(stdin) = self.stdin {
+            log::info!("stdin: {}", stdin);
             dup(STDIN_FILENO)?;
             dup2(stdin, STDIN_FILENO)?;
         }
         if let Some(stdout) = self.stdout {
+            log::info!("stdout: {}", stdout);
             dup(STDOUT_FILENO)?;
             dup2(stdout, STDOUT_FILENO)?;
         }

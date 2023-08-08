@@ -3,6 +3,7 @@ pub mod executor;
 pub mod instance;
 pub mod oci_utils;
 
+#[cfg(unix)]
 #[cfg(test)]
 mod test {
     use std::os::unix::prelude::OsStrExt;

@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use anyhow::Result;
 use containerd_shim_wasm::sandbox::oci;
 use nix::unistd::{dup, dup2};

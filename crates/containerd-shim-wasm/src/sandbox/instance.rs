@@ -4,13 +4,16 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-use libc::{SIGINT, SIGKILL, SIGTERM};
+use libc::{SIGINT, SIGTERM};
 
 use chrono::{DateTime, Utc};
 
 use super::error::Error;
 
 type ExitCode = (Mutex<Option<(u32, DateTime<Utc>)>>, Condvar);
+
+#[cfg(unix)]
+use libc::SIGKILL;
 
 /// Generic options builder for creating a wasm instance.
 /// This is passed to the `Instance::new` method.
@@ -195,6 +198,7 @@ impl Instance for Nop {
     }
     fn kill(&self, signal: u32) -> Result<(), Error> {
         let code = match signal as i32 {
+            #[cfg(unix)]
             SIGKILL => 137,
             SIGINT | SIGTERM => 0,
             s => {
@@ -223,10 +227,12 @@ mod noptests {
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
+    #[cfg(unix)]
     use libc::SIGHUP;
 
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn test_nop_kill_sigkill() -> Result<(), Error> {
         let nop = Nop::new("".to_string(), None);
@@ -266,6 +272,7 @@ mod noptests {
         Ok(())
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_op_kill_other() -> Result<(), Error> {
         let nop = Nop::new("".to_string(), None);
