@@ -31,7 +31,7 @@ build:
 .PHONY: check
 check:
 	cargo fmt --all -- --check
-	cargo clippy --all --all-targets -- $(WARNINGS)
+	cargo clippy $(FEATURES) --all --all-targets -- $(WARNINGS)
 
 .PHONY: fix
 fix:
