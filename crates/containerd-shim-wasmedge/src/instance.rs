@@ -4,14 +4,15 @@ use containerd_shim_wasm::libcontainer_instance::LibcontainerInstance;
 use containerd_shim_wasm::libcontainer_instance::LinuxContainerExecutor;
 use containerd_shim_wasm::sandbox::error::Error;
 use containerd_shim_wasm::sandbox::instance::ExitCode;
+use containerd_shim_wasm::sandbox::instance_utils::maybe_duplicate_stdio;
 use containerd_shim_wasm::sandbox::instance_utils::maybe_open_stdio;
 use containerd_shim_wasm::sandbox::{EngineGetter, InstanceConfig};
-use nix::unistd::close;
+
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::ErrorKind;
-use std::os::fd::IntoRawFd;
+
 use std::sync::{Arc, Condvar, Mutex};
 use wasmedge_sdk::{
     config::{CommonConfigOptions, ConfigBuilder, HostRegistrationConfigOptions},
@@ -102,20 +103,19 @@ impl LibcontainerInstance for Wasi {
     fn build_container(&self) -> std::result::Result<Container, Error> {
         fs::create_dir_all(&self.rootdir)?;
 
-        let stdin = maybe_open_stdio(self.stdin.as_str())
-            .context("could not open stdin")?
-            .map(|f| f.into_raw_fd());
-        let stdout = maybe_open_stdio(self.stdout.as_str())
-            .context("could not open stdout")?
-            .map(|f| f.into_raw_fd());
-        let stderr = maybe_open_stdio(self.stderr.as_str())
-            .context("could not open stderr")?
-            .map(|f| f.into_raw_fd());
+        let stdin = maybe_open_stdio(self.stdin.as_str()).context("could not open stdin")?;
+        let stdin2 = maybe_duplicate_stdio(&stdin)?;
+
+        let stdout = maybe_open_stdio(self.stdout.as_str()).context("could not open stdout")?;
+        let stdout2 = maybe_duplicate_stdio(&stdout)?;
+
+        let stderr = maybe_open_stdio(self.stderr.as_str()).context("could not open stderr")?;
+        let stderr2 = maybe_duplicate_stdio(&stderr)?;
 
         let syscall = create_syscall();
         let err_others = |err| Error::Others(format!("failed to create container: {}", err));
         let default_executor = Box::new(LinuxContainerExecutor::new(stdin, stdout, stderr));
-        let wasmedge_executor = Box::new(WasmEdgeExecutor::new(stdin, stdout, stderr));
+        let wasmedge_executor = Box::new(WasmEdgeExecutor::new(stdin2, stdout2, stderr2));
 
         let container = ContainerBuilder::new(self.id.clone(), syscall.as_ref())
             .with_executor(vec![default_executor, wasmedge_executor])
@@ -126,11 +126,6 @@ impl LibcontainerInstance for Wasi {
             .with_systemd(false)
             .build()
             .map_err(err_others)?;
-        // Close the fds now that they have been passed to the container process
-        // so that we don't leak them.
-        stdin.map(close);
-        stdout.map(close);
-        stderr.map(close);
 
         Ok(container)
     }

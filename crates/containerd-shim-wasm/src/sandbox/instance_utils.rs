@@ -1,9 +1,11 @@
 //! Common utilities for the containerd shims.
 use crate::sandbox::error::Error;
 use anyhow::{bail, Context, Result};
+use nix::unistd::{dup, dup2};
 use std::{
     fs::{self, File, OpenOptions},
     io::ErrorKind,
+    os::fd::AsRawFd,
     path::{Path, PathBuf},
 };
 
@@ -43,6 +45,22 @@ pub fn maybe_open_stdio(path: &str) -> Result<Option<File>, Error> {
             _ => Err(err.into()),
         },
     }
+}
+
+pub fn maybe_duplicate_stdio(stdio_file: &Option<File>) -> Result<Option<File>, Error> {
+    let stdio_file = match stdio_file.as_ref() {
+        Some(stdin) => Some(stdin.try_clone()?),
+        None => None,
+    };
+    Ok(stdio_file)
+}
+
+pub fn dup_file(file: &Option<std::fs::File>, fd: std::os::fd::RawFd) -> nix::Result<()> {
+    if let Some(file) = file {
+        dup(fd)?;
+        dup2(file.as_raw_fd(), fd)?;
+    }
+    Ok(())
 }
 
 fn construct_instance_root<P: AsRef<Path>>(root_path: P, container_id: &str) -> Result<PathBuf> {

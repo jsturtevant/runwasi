@@ -1,23 +1,25 @@
+use crate::sandbox::instance_utils::dup_file;
 use crate::sandbox::oci;
 use libcontainer::workload::default::DefaultExecutor;
 use libcontainer::workload::{Executor, ExecutorError};
-use nix::unistd::{dup, dup2};
 
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use oci_spec::runtime::Spec;
+use std::fs::File;
 use std::io::Read;
-use std::{fs::OpenOptions, os::fd::RawFd, path::PathBuf};
+
+use std::{fs::OpenOptions, path::PathBuf};
 
 #[derive(Default)]
 pub struct LinuxContainerExecutor {
-    stdin: Option<RawFd>,
-    stdout: Option<RawFd>,
-    stderr: Option<RawFd>,
+    stdin: Option<File>,
+    stdout: Option<File>,
+    stderr: Option<File>,
     default_executor: DefaultExecutor,
 }
 
 impl LinuxContainerExecutor {
-    pub fn new(stdin: Option<RawFd>, stdout: Option<RawFd>, stderr: Option<RawFd>) -> Self {
+    pub fn new(stdin: Option<File>, stdout: Option<File>, stderr: Option<File>) -> Self {
         Self {
             stdin,
             stdout,
@@ -29,7 +31,7 @@ impl LinuxContainerExecutor {
 
 impl Executor for LinuxContainerExecutor {
     fn exec(&self, spec: &Spec) -> Result<(), ExecutorError> {
-        redirect_io(self.stdin, self.stdout, self.stderr).map_err(|err| {
+        redirect_io(&self.stdin, &self.stdout, &self.stderr).map_err(|err| {
             log::error!("failed to redirect io: {}", err);
             ExecutorError::Other(format!("failed to redirect io: {}", err))
         })?;
@@ -116,18 +118,14 @@ impl Executor for LinuxContainerExecutor {
     }
 }
 
-fn redirect_io(stdin: Option<i32>, stdout: Option<i32>, stderr: Option<i32>) -> anyhow::Result<()> {
-    if let Some(stdin) = stdin {
-        dup(STDIN_FILENO)?;
-        dup2(stdin, STDIN_FILENO)?;
-    }
-    if let Some(stdout) = stdout {
-        dup(STDOUT_FILENO)?;
-        dup2(stdout, STDOUT_FILENO)?;
-    }
-    if let Some(stderr) = stderr {
-        dup(STDERR_FILENO)?;
-        dup2(stderr, STDERR_FILENO)?;
-    }
+fn redirect_io(
+    stdin: &Option<File>,
+    stdout: &Option<File>,
+    stderr: &Option<File>,
+) -> anyhow::Result<()> {
+    dup_file(stdin, STDIN_FILENO)?;
+    dup_file(stdout, STDOUT_FILENO)?;
+    dup_file(stderr, STDERR_FILENO)?;
+
     Ok(())
 }

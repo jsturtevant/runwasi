@@ -1,12 +1,12 @@
 use anyhow::Result;
-use containerd_shim_wasm::sandbox::oci;
-use nix::unistd::{dup, dup2};
+use containerd_shim_wasm::sandbox::{instance_utils::dup_file, oci};
+
 use oci_spec::runtime::Spec;
 
 use libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use libcontainer::workload::{Executor, ExecutorError};
 use log::debug;
-use std::{os::unix::io::RawFd, path::PathBuf};
+use std::{fs::File, path::PathBuf};
 
 use wasmedge_sdk::{
     config::{CommonConfigOptions, ConfigBuilder, HostRegistrationConfigOptions},
@@ -16,13 +16,13 @@ use wasmedge_sdk::{
 const EXECUTOR_NAME: &str = "wasmedge";
 
 pub struct WasmEdgeExecutor {
-    stdin: Option<RawFd>,
-    stdout: Option<RawFd>,
-    stderr: Option<RawFd>,
+    stdin: Option<File>,
+    stdout: Option<File>,
+    stderr: Option<File>,
 }
 
 impl WasmEdgeExecutor {
-    pub fn new(stdin: Option<RawFd>, stdout: Option<RawFd>, stderr: Option<RawFd>) -> Self {
+    pub fn new(stdin: Option<File>, stdout: Option<File>, stderr: Option<File>) -> Self {
         Self {
             stdin,
             stdout,
@@ -104,18 +104,11 @@ impl WasmEdgeExecutor {
         let vm = vm
             .register_module_from_file("main", module_name)
             .map_err(|err| ExecutorError::Execution(err))?;
-        if let Some(stdin) = self.stdin {
-            dup(STDIN_FILENO)?;
-            dup2(stdin, STDIN_FILENO)?;
-        }
-        if let Some(stdout) = self.stdout {
-            dup(STDOUT_FILENO)?;
-            dup2(stdout, STDOUT_FILENO)?;
-        }
-        if let Some(stderr) = self.stderr {
-            dup(STDERR_FILENO)?;
-            dup2(stderr, STDERR_FILENO)?;
-        }
+
+        dup_file(&self.stdin, STDIN_FILENO)?;
+        dup_file(&self.stdout, STDOUT_FILENO)?;
+        dup_file(&self.stderr, STDERR_FILENO)?;
+
         Ok(vm)
     }
 }

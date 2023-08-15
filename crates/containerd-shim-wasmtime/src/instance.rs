@@ -1,7 +1,7 @@
 use anyhow::Result;
 use libcontainer::container::builder::ContainerBuilder;
 use libcontainer::container::Container;
-use nix::unistd::close;
+
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{ErrorKind, Read};
@@ -12,10 +12,9 @@ use anyhow::Context;
 use containerd_shim_wasm::libcontainer_instance::{LibcontainerInstance, LinuxContainerExecutor};
 use containerd_shim_wasm::sandbox::error::Error;
 use containerd_shim_wasm::sandbox::instance::ExitCode;
-use containerd_shim_wasm::sandbox::instance_utils::maybe_open_stdio;
+use containerd_shim_wasm::sandbox::instance_utils::{maybe_duplicate_stdio, maybe_open_stdio};
 use containerd_shim_wasm::sandbox::{EngineGetter, InstanceConfig};
 use libcontainer::syscall::syscall::create_syscall;
-use std::os::fd::IntoRawFd;
 
 use wasmtime::Engine;
 
@@ -101,19 +100,17 @@ impl LibcontainerInstance for Wasi {
     fn build_container(&self) -> std::result::Result<Container, Error> {
         let engine = self.engine.clone();
         let syscall = create_syscall();
-        let stdin = maybe_open_stdio(&self.stdin)
-            .context("could not open stdin")?
-            .map(|f| f.into_raw_fd());
-        let stdout = maybe_open_stdio(&self.stdout)
-            .context("could not open stdout")?
-            .map(|f| f.into_raw_fd());
-        let stderr = maybe_open_stdio(&self.stderr)
-            .context("could not open stderr")?
-            .map(|f| f.into_raw_fd());
+        let stdin = maybe_open_stdio(&self.stdin).context("could not open stdin")?;
+        let stdin2 = maybe_duplicate_stdio(&stdin)?;
+        let stdout = maybe_open_stdio(&self.stdout).context("could not open stdout")?;
+        let stdout2 = maybe_duplicate_stdio(&stdout)?;
+        let stderr = maybe_open_stdio(&self.stderr).context("could not open stderr")?;
+        let stderr2 = maybe_duplicate_stdio(&stderr)?;
+
         let err_others = |err| Error::Others(format!("failed to create container: {}", err));
 
         let wasmtime_executor = Box::new(WasmtimeExecutor::new(stdin, stdout, stderr, engine));
-        let default_executor = Box::new(LinuxContainerExecutor::new(stdin, stdout, stderr));
+        let default_executor = Box::new(LinuxContainerExecutor::new(stdin2, stdout2, stderr2));
 
         let container = ContainerBuilder::new(self.id.clone(), syscall.as_ref())
             .with_executor(vec![default_executor, wasmtime_executor])
@@ -124,12 +121,6 @@ impl LibcontainerInstance for Wasi {
             .with_systemd(false)
             .build()
             .map_err(err_others)?;
-
-        // Close the fds now that they have been passed to the container process
-        // so that we don't leak them.
-        stdin.map(close);
-        stdout.map(close);
-        stderr.map(close);
 
         Ok(container)
     }
