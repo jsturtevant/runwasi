@@ -40,6 +40,8 @@ Then you can run:
 make build
 ```
 
+Make sure `ctr.exe` is on your path, if you install [following containerd's instructions](https://github.com/containerd/containerd/blob/main/docs/getting-started.md#installing-containerd-on-windows) it is typically in `$Env:ProgramFiles\containerd`.
+
 ### Using VS code
 If you are using VS Code for development you can use the following `settings.json` in the `.vscode` folder of the project:
 
@@ -51,3 +53,29 @@ If you are using VS Code for development you can use the following `settings.jso
         "WASMEDGE_INCLUDE_DIR": "C:\\Program Files\\WasmEdge\\include"
     }
 }
+
+### Debugging
+It can be handy to attach a debugger. The shim comes with the [ability to pause](https://github.com/containerd/rust-extensions/blob/27a503a474c68cdba7eff5b9f1b439d1846c39e0/crates/shim/src/synchronous/mod.rs#L249) the shim after its startup sequence.  
+
+The general process is:
+
+1. Set the flag `$env:SHIM_DEBUGGER="true"` before starting containerd
+1. Run the shim with `ctr run -rm --runtime=io.containerd.wasmtime.v1 ghcr.io/containerd/runwasi/wasi-demo-app:latest testwasm`. At this point in the containerd logs you will see output like 
+1. Attach the debugger and set a break point
+1. Use [docker-signal](https://github.com/moby/docker-signal) the program to continue `go run .\docker-signal.go --debugger -pid 34344`
+
+#### VS Code debugger configuration
+
+Install [C/C++ Tools extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools).
+
+Start VS Code as an Admin and use the following configuration file. This will prompt you for a process to attach to (select either by choosing PID or name). There will be two processes due to the shim activation process in Windows, select the one that doesn't have `start` as part of is command line arguments.
+
+```
+{
+    "name": "(runwasi) Attach",
+    "type": "cppvsdbg",
+    "request": "attach",
+    "processId": "${command:pickProcess}",
+    "requireExactSource": false
+}
+```

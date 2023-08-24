@@ -3,6 +3,7 @@ INSTALL ?= install
 TEST_IMG_NAME ?= wasmtest:latest
 RUNTIMES ?= wasmedge wasmtime
 export CONTAINERD_NAMESPACE ?= default
+SUDO ?= sudo
 
 TARGET ?= debug
 RELEASE_FLAG :=
@@ -10,10 +11,14 @@ ifeq ($(TARGET),release)
 RELEASE_FLAG = --release
 endif
 
+RUN_OS := unix
 FEATURES := --features libcontainer_default
 WARNINGS := -D warnings
 ifeq ($(OS), Windows_NT)
 # need to turn off static/standalone for wasm-edge
+RUN_OS = windows
+PREFIX = "C:\Users\jstur\projects\containerd\bin"
+SUDO= 
 FEATURES = --no-default-features
 # turn of warnings until windows is fully supported #49
 WARNINGS = 
@@ -48,12 +53,22 @@ ifneq ($(OS), Windows_NT)
 endif
 
 .PHONY: install
-install:
+install: build
+	$(MAKE) install-$(RUN_OS)
+
+.PHONY: install-unix
+install-unix:
 	mkdir -p $(PREFIX)/bin
 	$(foreach runtime,$(RUNTIMES), \
 		$(INSTALL) target/$(TARGET)/containerd-shim-$(runtime)-v1 $(PREFIX)/bin/; \
 		$(INSTALL) target/$(TARGET)/containerd-shim-$(runtime)d-v1 $(PREFIX)/bin/; \
 		$(INSTALL) target/$(TARGET)/containerd-$(runtime)d $(PREFIX)/bin/; \
+	)
+
+.PHONY: install-windows
+install-windows:
+	$(foreach runtime,$(RUNTIMES), \
+		cp target/$(TARGET)/containerd-shim-$(runtime)-v1.exe $(PREFIX); \
 	)
 
 dist:
@@ -75,11 +90,11 @@ target/wasm32-wasi/$(TARGET)/img.tar: target/wasm32-wasi/$(TARGET)/wasi-demo-app
 	cd crates/wasi-demo-app && cargo build $(RELEASE_FLAG) --features oci-v1-tar
 
 dist/img.tar: target/wasm32-wasi/$(TARGET)/img.tar
-	@mkdir -p dist/
-	cp $< $@
+	@mkdir -p "dist/"
+	cp "$<" "$@"
 
 load: dist/img.tar
-	sudo ctr -n $(CONTAINERD_NAMESPACE) image import --all-platforms $<
+	$(SUDO) ctr -n $(CONTAINERD_NAMESPACE) image import --all-platforms $<
 
 bin/kind: test/k8s/Dockerfile
 	$(DOCKER_BUILD) --output=bin/ -f test/k8s/Dockerfile --target=kind .

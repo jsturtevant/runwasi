@@ -8,7 +8,8 @@ use std::fs::{self, canonicalize, create_dir_all, DirBuilder, File, OpenOptions}
 use std::ops::Not;
 #[cfg(unix)]
 use std::os::unix::fs::DirBuilderExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
@@ -29,7 +30,8 @@ use containerd_shim::{self as shim, api, warn, ExitSignal, TtrpcContext, TtrpcRe
 use log::{debug, error};
 #[cfg(unix)]
 use nix::mount::{mount, MsFlags};
-use oci_spec::runtime::{self, Spec};
+use oci_spec::runtime::{self, Root, Spec};
+use serde_json::Value;
 use shim::api::{StatsRequest, StatsResponse};
 use shim::Flags;
 use ttrpc::context::Context;
@@ -842,6 +844,24 @@ impl<T: Instance + Send + Sync> Local<T> {
         spec.canonicalize_rootfs(req.bundle()).map_err(|err| {
             ShimError::InvalidArgument(format!("could not canonicalize rootfs: {}", err))
         })?;
+
+        // Windows passes root mounts via containerd request
+        let rootfs_mounts = req.rootfs().to_vec();
+        if rootfs_mounts.len() >= 1 {
+            let windows_file = rootfs_mounts[0].options[1]
+                .strip_prefix("parentLayerPaths=")
+                .unwrap();
+
+            let parent_layers: Value = serde_json::from_str(&windows_file)?;
+            let layer = &parent_layers[0];
+            let layer_path = PathBuf::from_str(layer.as_str().unwrap()).unwrap();
+            let windows_layer = layer_path.join("Files");
+
+            let mut b = Root::default();
+            let r = b.set_path(windows_layer);
+            spec.set_root(Some(r.to_owned()));
+        }
+
         let rootfs = spec
             .root()
             .as_ref()
@@ -949,7 +969,8 @@ impl<T: Instance + Send + Sync> Local<T> {
             .set_stdin(req.stdin().to_string())
             .set_stdout(req.stdout().to_string())
             .set_stderr(req.stderr().to_string())
-            .set_bundle(req.bundle().to_string());
+            .set_bundle(req.bundle().to_string())
+            .set_spec(spec.clone());
         self.instances.write().unwrap().insert(
             req.id().to_string(),
             Arc::new(InstanceData {

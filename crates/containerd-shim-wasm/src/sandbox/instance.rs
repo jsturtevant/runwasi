@@ -6,6 +6,7 @@ use std::thread;
 
 use chrono::{DateTime, Utc};
 use libc::{SIGINT, SIGTERM};
+use oci_spec::runtime::Spec;
 
 use super::error::Error;
 
@@ -14,7 +15,7 @@ pub type ExitCode = Arc<(Mutex<Option<(u32, DateTime<Utc>)>>, Condvar)>;
 #[cfg(unix)]
 use libc::SIGKILL;
 #[cfg(windows)]
-const SIGKILL: i32 = 9;
+pub const SIGKILL: i32 = 9;
 
 /// Generic options builder for creating a wasm instance.
 /// This is passed to the `Instance::new` method.
@@ -35,6 +36,7 @@ pub struct InstanceConfig<Engine: Send + Sync + Clone> {
     namespace: String,
     // /// GRPC address back to main containerd
     containerd_address: String,
+    spec: Option<Spec>,
 }
 
 impl<Engine: Send + Sync + Clone> InstanceConfig<Engine> {
@@ -47,6 +49,7 @@ impl<Engine: Send + Sync + Clone> InstanceConfig<Engine> {
             stderr: None,
             bundle: None,
             containerd_address,
+            spec: None,
         }
     }
 
@@ -89,6 +92,11 @@ impl<Engine: Send + Sync + Clone> InstanceConfig<Engine> {
         self
     }
 
+    pub fn set_spec(&mut self, spec: Spec) -> &mut Self {
+        self.spec = Some(spec);
+        self
+    }
+
     /// get the OCI bundle path for the instance
     pub fn get_bundle(&self) -> Option<String> {
         self.bundle.clone()
@@ -107,6 +115,10 @@ impl<Engine: Send + Sync + Clone> InstanceConfig<Engine> {
     /// get the containerd address for the instance
     pub fn get_containerd_address(&self) -> String {
         self.containerd_address.clone()
+    }
+
+    pub fn get_spec(&self) -> Option<Spec> {
+        self.spec.clone()
     }
 }
 

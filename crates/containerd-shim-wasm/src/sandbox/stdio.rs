@@ -35,7 +35,7 @@ macro_rules! stdio_impl {
                     path => Some(path.to_owned()),
                 })
                 .map(
-                    |path| match OpenOptions::new().read(true).write(true).open(path) {
+                    |path| match open(path) {
                         Err(err) if err.kind() == NotFound => Ok(None),
                         Ok(f) => Ok(Some(f)),
                         Err(err) => Err(err),
