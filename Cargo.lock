@@ -575,6 +575,7 @@ dependencies = [
  "anyhow",
  "cap-std",
  "chrono",
+ "clap",
  "containerd-shim",
  "containerd-shim-wasm",
  "dbus",

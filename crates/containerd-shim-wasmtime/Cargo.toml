@@ -34,6 +34,7 @@ thiserror = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 libc = { workspace = true }
+clap = { version = "4.3.23", features = ["derive"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true }
@@ -62,3 +63,7 @@ path = "src/bin/containerd-shim-wasmtimed-v1/main.rs"
 [[bin]]
 name = "containerd-wasmtimed"
 path = "src/bin/containerd-wasmtimed/main.rs"
+
+[[bin]]
+name = "containerd-wasmtime-windows"
+path = "src/bin/containerd-wasmtime-windows/main.rs"

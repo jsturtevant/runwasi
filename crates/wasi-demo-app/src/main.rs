@@ -27,6 +27,12 @@ fn main() {
             );
             sleep(Duration::from_secs(1));
         },
+        "env" => {
+            println!("dumping envs");
+            for (key, value) in env::vars() {
+                println!("{}={}", key, value);
+            }
+        }
         _ => {
             eprintln!("unknown command: {0}", args[1]);
             process::exit(1);

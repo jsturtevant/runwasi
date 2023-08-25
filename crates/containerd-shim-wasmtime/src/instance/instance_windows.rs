@@ -16,6 +16,8 @@ use windows::Win32::System::Threading::{
     OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
 };
 
+use crate::oci_wasmtime;
+
 pub struct Wasi {
     id: String,
     exit_code: ExitCode,
@@ -63,14 +65,31 @@ impl Instance for Wasi {
                 ));
             }
         };
-        let module_name = module_name.strip_prefix("/").unwrap();
 
+        let env = oci_wasmtime::env_to_wasi(spec);
+
+        //temp
+        let module_name = module_name.strip_prefix("/").unwrap_or(&module_name);
         let root = oci::get_root(&spec);
         let mod_path = root.join(module_name);
-        let mut child_process = Command::new("wasmtime")
-            .arg("run")
+
+        let args = oci::get_args(spec);
+
+
+        let mut cmd = Command::new("containerd-wasmtime-windows");
+
+        cmd.arg("-m")
             .arg(mod_path.to_str().unwrap())
-            .spawn()
+            .arg("-t")
+            .arg(method)
+            .env_clear()
+            .envs(env);
+
+        for a in args {
+            cmd.arg("-a").arg(a);
+        }
+                    
+        let mut child_process = cmd.spawn()
             .map_err(|err| Error::Any(anyhow::anyhow!("failed to start container: {}", err)))?;
 
         let process_id = child_process.id() as u32;

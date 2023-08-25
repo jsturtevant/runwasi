@@ -69,6 +69,7 @@ install-unix:
 install-windows:
 	$(foreach runtime,$(RUNTIMES), \
 		cp target/$(TARGET)/containerd-shim-$(runtime)-v1.exe $(PREFIX); \
+		cp target/$(TARGET)/containerd-$(runtime)-windows.exe $(PREFIX); \
 	)
 
 dist:
