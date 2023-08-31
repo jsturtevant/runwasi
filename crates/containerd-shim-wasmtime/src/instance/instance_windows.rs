@@ -1,22 +1,25 @@
 use std::os::windows::prelude::AsRawHandle;
 use std::path::PathBuf;
-use std::process::Command;
+use power_process::power_command::{Command, CommandExt};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use chrono::Utc;
+use containerd_shim_wasm::windows::job::new_job;
 use containerd_shim_wasm::sandbox::error::Error;
 use containerd_shim_wasm::sandbox::instance::{ExitCode, Wait, SIGKILL};
 use containerd_shim_wasm::sandbox::instance_utils::determine_rootdir;
 use containerd_shim_wasm::sandbox::{oci, Instance, InstanceConfig, Stdio};
+
 use log::debug;
 use oci_spec::runtime::Spec;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Threading::{
-    OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
+    OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,PROC_THREAD_ATTRIBUTE_JOB_LIST
 };
 
-use crate::oci_wasmtime;
+use crate::oci_wasmtime;            
+use std::ptr;
 
 pub struct Wasi {
     id: String,
@@ -68,15 +71,16 @@ impl Instance for Wasi {
 
         let env = oci_wasmtime::env_to_wasi(spec);
 
-        //temp
+        //temp      
         let module_name = module_name.strip_prefix("/").unwrap_or(&module_name);
-        let root = oci::get_root(&spec);
+        let root = oci::get_root(&spec);    
         let mod_path = root.join(module_name);
 
-        let args = oci::get_args(spec);
+        let args = oci::get_args(spec);     
 
 
         let mut cmd = Command::new("containerd-wasmtime-windows");
+        let job = new_job().unwrap();
 
         cmd.arg("-m")
             .arg(mod_path.to_str().unwrap())
@@ -88,7 +92,7 @@ impl Instance for Wasi {
         for a in args {
             cmd.arg("-a").arg(a);
         }
-                    
+        unsafe { cmd.raw_attribute(PROC_THREAD_ATTRIBUTE_JOB_LIST as usize, job.as_raw_handle() as isize);}
         let mut child_process = cmd.spawn()
             .map_err(|err| Error::Any(anyhow::anyhow!("failed to start container: {}", err)))?;
 
@@ -148,3 +152,5 @@ fn kill_process_by_id(handle: HANDLE) -> Result<(), String> {
         Err(e) => Err(format!("Failed to terminate process: {:?}", e)),
     }
 }
+
+

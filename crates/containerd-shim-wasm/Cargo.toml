@@ -32,7 +32,12 @@ libcontainer = { workspace = true, optional = true, default-features = false }
 nix = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows = { workspace = true, features= [
+    "Win32_Foundation", 
+    "Win32_System_Threading", 
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_Storage_FileSystem"] }
 
 [build-dependencies]
 ttrpc-codegen = { version = "0.4.2", optional = true }

@@ -2,13 +2,13 @@ use std::io::ErrorKind::Other;
 use std::io::{Error, Result};
 use std::os::windows::prelude::{AsRawHandle, IntoRawHandle, OwnedHandle};
 use std::os::windows::fs::OpenOptionsExt;
-use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
+use windows::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use libc::{c_int, close, intptr_t, open_osfhandle, O_APPEND};
 
-use crate::sandbox::stdio::Stdin;
+use crate::sandbox::stdio::Stdin;   
 
 type StdioRawFd = libc::c_int;
 
@@ -34,7 +34,7 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
         options.read(true).write(true);
         if path.as_ref().starts_with("\\\\.\\pipe\\") {
             log::debug!("jjs Opening named pipe with overlapped IO");
-            options.custom_flags(FILE_FLAG_OVERLAPPED);
+            options.custom_flags(FILE_FLAG_OVERLAPPED.0);
         }
     
         options.open(path)

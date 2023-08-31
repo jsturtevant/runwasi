@@ -42,7 +42,8 @@ libcontainer = { workspace = true }
 dbus = { version = "*", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { workspace = true, features= ["Win32_Foundation", "Win32_System_Threading"] }
+windows = { workspace = true, features= ["Win32_Foundation", "Win32_System_Threading", "Win32_Security","Win32_System_JobObjects"] }
+power-process =  { git= "https://github.com/jsturtevant/power-process", rev= "b51411702260f090292d5cf920a2ef46aa48276c" }
 
 [dev-dependencies]
 tempfile = "3.8"
