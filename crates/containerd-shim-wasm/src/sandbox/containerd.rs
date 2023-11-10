@@ -6,7 +6,7 @@ use containerd_client;
 use containerd_client::services::v1::containers_client::ContainersClient;
 use containerd_client::services::v1::content_client::ContentClient;
 use containerd_client::services::v1::images_client::ImagesClient;
-use containerd_client::services::v1::{GetContainerRequest, GetImageRequest, ReadContentRequest};
+use containerd_client::services::v1::{GetContainerRequest, GetImageRequest, ReadContentRequest, Container};
 use containerd_client::tonic::transport::Channel;
 use containerd_client::{tonic, with_namespace};
 use futures::TryStreamExt;
@@ -91,7 +91,7 @@ impl Client {
         })
     }
 
-    pub fn get_image(&self, container_name: impl ToString) -> Result<String> {
+    pub fn get_image(&self, container_name: impl ToString) -> Result<Container> {
         self.rt.block_on(async {
             let id = container_name.to_string();
             let req = GetContainerRequest { id };
@@ -107,8 +107,7 @@ impl Client {
                         "failed to get image for container {}",
                         container_name.to_string()
                     ))
-                })?
-                .image;
+                })?;
             Ok(image)
         })
     }
@@ -120,8 +119,12 @@ impl Client {
         &self,
         containerd_id: impl ToString,
     ) -> Result<(Vec<oci::WasmLayer>, Platform)> {
-        let image_name = self.get_image(containerd_id.to_string())?;
-        let digest = self.get_image_content_sha(image_name)?;
+        let image = self.get_image(containerd_id.to_string())?;
+
+        
+
+
+        let digest = self.get_image_content_sha(image.image)?;
         let manifest = self.read_content(digest)?;
         let manifest = manifest.as_slice();
         let manifest = ImageManifest::from_reader(manifest)?;
@@ -138,18 +141,41 @@ impl Client {
         };
         log::info!("found manifest with WASM OCI image format.");
 
-        let layers = manifest
-            .layers()
-            .iter()
-            .filter(|x| !is_image_layer_type(x.media_type()))
-            .map(|config| {
-                self.read_content(config.digest()).map(|module| WasmLayer {
-                    config: config.clone(),
-                    layer: module,
+        match image.labels.get("containerd.io/referrers") {
+            Some(val) => {
+                log::info!("found precompiled image");
+                let manifest = self.read_content(val)?;
+                let manifest = manifest.as_slice();
+                let manifest = ImageManifest::from_reader(manifest)?;
+                let layers = manifest
+                .layers()
+                .iter()
+                .filter(|x| !is_image_layer_type(x.media_type()))
+                .map(|config| {
+                    self.read_content(config.digest()).map(|module| WasmLayer {
+                        config: config.clone(),
+                        layer: module,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok((layers, platform))
+                .collect::<Result<Vec<_>>>()?;
+                return Ok((layers, platform))
+            },
+            None => {
+                log::info!("found layers image");
+                let layers = manifest
+                .layers()
+                .iter()
+                .filter(|x| !is_image_layer_type(x.media_type()))
+                .map(|config| {
+                    self.read_content(config.digest()).map(|module| WasmLayer {
+                        config: config.clone(),
+                        layer: module,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+                    return Ok((layers, platform))
+                },
+        };
     }
 }
 

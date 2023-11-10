@@ -49,7 +49,8 @@ impl Engine for WasmtimeEngine {
             }
             [module] => {
                 log::info!("loading module wasm OCI layers");
-                Module::from_binary(&self.engine, &module.layer)?
+                unsafe {Module::deserialize(&self.engine, &module.layer)? }
+                //Module::from_binary(&self.engine, &module.layer)?
             }
             [..] => bail!("only a single module is supported when using images with OCI layers"),
         };
