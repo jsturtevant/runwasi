@@ -207,8 +207,8 @@ test/k8s/_out/img-%: override CARGO=cross TARGET= TARGET_DIR=
 test/k8s/_out/img-%: test/k8s/Dockerfile dist-%
 	mkdir -p $(@D) && $(DOCKER_BUILD) -f test/k8s/Dockerfile --build-arg="RUNTIME=$*" --iidfile=$(@) --load .
 
-test/k8s/_out/img-oci-%: test/k8s/Dockerfile.oci dist-%
-	mkdir -p $(@D) && $(DOCKER_BUILD) -f test/k8s/Dockerfile.oci --build-arg="RUNTIME=$*" --iidfile=$(@) --load .
+test/k8s/_out/img-nightly-%: test/k8s/Dockerfile.nightly dist-%
+	mkdir -p $(@D) && $(DOCKER_BUILD) -f test/k8s/Dockerfile.nightly --build-arg="RUNTIME=$*" --iidfile=$(@) --load .
 
 .PHONY: test/nginx
 test/nginx:
@@ -220,9 +220,21 @@ test/k8s/cluster-%: dist/img.tar bin/kind test/k8s/_out/img-%
 	bin/kind create cluster --name $(KIND_CLUSTER_NAME) --image="$(shell cat test/k8s/_out/img-$*)" && \
 	bin/kind load image-archive --name $(KIND_CLUSTER_NAME) $(<)
 
+.PHONY: test/k8s/cluster-nightly-%
+test/k8s/cluster-nightly-%: dist/img-nightly.tar bin/kind test/k8s/_out/img-%
+	bin/kind create cluster --name $(KIND_CLUSTER_NAME) --image="$(shell cat test/k8s/_out/img-nightly-$*)" && \
+	bin/kind load image-archive --name $(KIND_CLUSTER_NAME) $(<)
 
 .PHONY: test/k8s/deploy-workload-%
 test/k8s/deploy-workload-%: test/k8s/clean test/k8s/cluster-% 
+	kubectl --context=kind-$(KIND_CLUSTER_NAME) apply -f test/k8s/deploy.yaml
+	kubectl --context=kind-$(KIND_CLUSTER_NAME) wait deployment wasi-demo --for condition=Available=True --timeout=90s
+	# verify that we are still running after some time	
+	sleep 5s
+	kubectl --context=kind-$(KIND_CLUSTER_NAME) wait deployment wasi-demo --for condition=Available=True --timeout=5s
+
+.PHONY: test/k8s/deploy-workload-%
+test/k8s/deploy-workload-nightly-%: test/k8s/clean test/k8s/cluster-nightly-% 
 	kubectl --context=kind-$(KIND_CLUSTER_NAME) apply -f test/k8s/deploy.yaml
 	kubectl --context=kind-$(KIND_CLUSTER_NAME) wait deployment wasi-demo --for condition=Available=True --timeout=90s
 	# verify that we are still running after some time	
@@ -247,6 +259,12 @@ test/k8s/deploy-workload-oci-%: test/k8s/clean test/k8s/cluster-% dist/img-oci.t
 
 .PHONY: test/k8s-%
 test/k8s-%: test/k8s/deploy-workload-%
+	# verify that we are able to delete the deployment
+	kubectl --context=kind-$(KIND_CLUSTER_NAME) delete -f test/k8s/deploy.yaml
+	kubectl --context=kind-$(KIND_CLUSTER_NAME) wait deployment wasi-demo --for delete --timeout=60s
+
+.PHONY: test/k8s-nightly-%
+test/k8s-%: test/k8s/deploy-workload-nightly-%
 	# verify that we are able to delete the deployment
 	kubectl --context=kind-$(KIND_CLUSTER_NAME) delete -f test/k8s/deploy.yaml
 	kubectl --context=kind-$(KIND_CLUSTER_NAME) wait deployment wasi-demo --for delete --timeout=60s
