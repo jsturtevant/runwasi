@@ -841,10 +841,6 @@ impl<T: Instance + Send + Sync> Local<T> {
             }
         }
 
-        spec.canonicalize_rootfs(req.bundle()).map_err(|err| {
-            ShimError::InvalidArgument(format!("could not canonicalize rootfs: {}", err))
-        })?;
-
         // Windows passes root mounts via containerd request
         let rootfs_mounts = req.rootfs().to_vec();
         if rootfs_mounts.len() >= 1 {
@@ -861,6 +857,11 @@ impl<T: Instance + Send + Sync> Local<T> {
             let r = b.set_path(windows_layer);
             spec.set_root(Some(r.to_owned()));
         }
+
+
+        spec.canonicalize_rootfs(req.bundle()).map_err(|err| {
+            ShimError::InvalidArgument(format!("could not canonicalize rootfs: {}", err))
+        })?;
 
         let rootfs = spec
             .root()
