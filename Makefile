@@ -5,6 +5,8 @@ LN ?= ln -sf
 TEST_IMG_NAME ?= wasmtest:latest
 RUNTIMES ?= wasmedge wasmtime wasmer
 CONTAINERD_NAMESPACE ?= default
+SUDO ?= sudo
+EXE_SUFFIX ?=
 
 # We have a bit of fancy logic here to determine the target 
 # since we support building for gnu and musl
@@ -56,6 +58,8 @@ ifeq ($(OS), Windows_NT)
 FEATURES_wasmedge = --no-default-features
 # turn of warnings until windows is fully supported #49
 WARNINGS = 
+EXE_SUFFIX=.exe
+SUDO=
 endif
 
 DOCKER_BUILD ?= docker buildx build
@@ -135,9 +139,16 @@ install: $(RUNTIMES:%=install-%);
 
 install-%: build-%
 	mkdir -p $(PREFIX)/bin
+	ls $(PREFIX)/bin
+	cd $(PREFIX)/bin
 	$(INSTALL) $(TARGET_DIR)/$(TARGET)/$(OPT_PROFILE)/containerd-shim-$*-v1 $(PREFIX)/bin/
-	$(LN) ./containerd-shim-$*-v1 $(PREFIX)/bin/containerd-shim-$*d-v1
-	$(LN) ./containerd-shim-$*-v1 $(PREFIX)/bin/containerd-$*d
+	$(LN) ./containerd-shim-$*-v1 $(PREFIX)/bin/containerd-shim-$*d-v1$(EXE_SUFFIX)
+	$(LN) ./containerd-shim-$*-v1 $(PREFIX)/bin/containerd-$*d$(EXE_SUFFIX)
+ifeq ($(OS), Windows_NT)
+	# if using gitbash on windows they are installed into C:\Program Files\Git\usr\local\bin\ 
+	# add the dir to the path to make it easier to use or copy next to containerd installation
+	$(LN) ./containerd-shim-$*-v1 $(PREFIX)/bin/containerd-$*-windows$(EXE_SUFFIX)
+endif
 
 .PHONY: dist dist-%
 dist: $(RUNTIMES:%=dist-%);
@@ -191,13 +202,12 @@ dist/img-oci.tar: target/wasm32-wasi/$(OPT_PROFILE)/img-oci.tar
 	cp "$<" "$@"
 
 load: dist/img.tar
-	sudo ctr -n $(CONTAINERD_NAMESPACE) image import --all-platforms $<
+	$(SUDO) ctr -n $(CONTAINERD_NAMESPACE) image import --all-platforms $<
 
-CTR_VERSION := $(shell sudo ctr version | sed -n -e '/Version/ {s/.*: *//p;q;}')
+CTR_VERSION := $(shell $(SUDO) ctr version | sed -n -e '/Version/ {s/.*: *//p;q;}')
 load/oci: dist/img-oci.tar
-	@echo $(CTR_VERSION)\\nv1.7.7 | sort -crV || @echo $(CTR_VERSION)\\nv1.6.25 | sort -crV || (echo "containerd version must be 1.7.7+ or 1.6.25+ was $(CTR_VERSION)" && exit 1)
 	@echo using containerd $(CTR_VERSION)
-	sudo ctr -n $(CONTAINERD_NAMESPACE) image import --all-platforms $<
+	$(SUDO) ctr -n $(CONTAINERD_NAMESPACE) image import --all-platforms $<
 
 .PHONY:
 target/wasm32-wasi/$(OPT_PROFILE)/img-oci.tar: target/wasm32-wasi/$(OPT_PROFILE)/wasi-demo-app.wasm
@@ -278,38 +288,38 @@ bin/k3s/clean:
 
 .PHONY: test/k3s-%
 test/k3s-%: dist/img.tar bin/k3s dist-%
-	sudo bash -c -- 'while ! timeout 40 test/k3s/bootstrap.sh "$*" dist/img.tar; do $(MAKE) bin/k3s/clean bin/k3s; done'
-	sudo bin/k3s kubectl get pods --all-namespaces
-	sudo bin/k3s kubectl apply -f test/k8s/deploy.yaml
-	sudo bin/k3s kubectl get pods --all-namespaces
-	sudo bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=120s
+	$(SUDO) bash -c -- 'while ! timeout 40 test/k3s/bootstrap.sh "$*" dist/img.tar; do $(MAKE) bin/k3s/clean bin/k3s; done'
+	$(SUDO) bin/k3s kubectl get pods --all-namespaces
+	$(SUDO) bin/k3s kubectl apply -f test/k8s/deploy.yaml
+	$(SUDO) bin/k3s kubectl get pods --all-namespaces
+	$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=120s
 	# verify that we are still running after some time	
 	sleep 5s
-	sudo bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=5s
-	sudo bin/k3s kubectl get pods -o wide
-	sudo bin/k3s kubectl delete -f test/k8s/deploy.yaml
-	sudo bin/k3s kubectl wait deployment wasi-demo --for delete --timeout=60s
+	$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=5s
+	$(SUDO) bin/k3s kubectl get pods -o wide
+	$(SUDO) bin/k3s kubectl delete -f test/k8s/deploy.yaml
+	$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for delete --timeout=60s
 
 .PHONY: test/k3s-oci-%
 test/k3s-oci-%: dist/img-oci.tar bin/k3s dist-%
-	sudo bash -c -- 'while ! timeout 40 test/k3s/bootstrap.sh "$*" dist/img-oci.tar; do $(MAKE) bin/k3s/clean bin/k3s; done'
-	sudo bin/k3s kubectl get pods --all-namespaces
-	sudo bin/k3s kubectl apply -f test/k8s/deploy.oci.yaml
-	sudo bin/k3s kubectl get pods --all-namespaces
-	sudo bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=120s
+	$(SUDO) bash -c -- 'while ! timeout 40 test/k3s/bootstrap.sh "$*" dist/img-oci.tar; do $(MAKE) bin/k3s/clean bin/k3s; done'
+	$(SUDO) bin/k3s kubectl get pods --all-namespaces
+	$(SUDO) bin/k3s kubectl apply -f test/k8s/deploy.oci.yaml
+	$(SUDO) bin/k3s kubectl get pods --all-namespaces
+	$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=120s
 	# verify that we are still running after some time	
 	sleep 5s
-	sudo bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=5s
-	sudo bin/k3s kubectl get pods -o wide
+	$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=5s
+	$(SUDO) bin/k3s kubectl get pods -o wide
 	@if [ "$*" = "wasmtime" ]; then \
 		set -e; \
 		echo "checking for pre-compiled labels and ensuring can scale"; \
-		sudo bin/k3s ctr -n k8s.io content ls | grep "runwasi.io/precompiled"; \
-		sudo bin/k3s kubectl scale deployment wasi-demo --replicas=4; \
-		sudo bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=5s; \
+		$(SUDO) bin/k3s ctr -n k8s.io content ls | grep "runwasi.io/precompiled"; \
+		$(SUDO) bin/k3s kubectl scale deployment wasi-demo --replicas=4; \
+		$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for condition=Available=True --timeout=5s; \
 	fi
-	sudo bin/k3s kubectl delete -f test/k8s/deploy.oci.yaml
-	sudo bin/k3s kubectl wait deployment wasi-demo --for delete --timeout=60s
+	$(SUDO) bin/k3s kubectl delete -f test/k8s/deploy.oci.yaml
+	$(SUDO) bin/k3s kubectl wait deployment wasi-demo --for delete --timeout=60s
 
 .PHONY: test/k3s/clean
 test/k3s/clean: bin/k3s/clean;
@@ -322,3 +332,6 @@ clean:
 	-$(MAKE) test-image/clean
 	-$(MAKE) test/k8s/clean
 	-$(MAKE) test/k3s/clean
+ifeq ($(OS), Windows_NT)
+	-powershell -ExecutionPolicy Bypass ./scripts/clean.ps1
+endif

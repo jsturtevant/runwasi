@@ -6,6 +6,8 @@ use std::sync::{Arc, OnceLock};
 use super::InstanceConfig;
 use crate::sys::stdio::*;
 
+use std::os::windows::io::OwnedHandle;
+
 #[derive(Default, Clone)]
 pub struct Stdio {
     pub stdin: Stdin,
@@ -88,10 +90,15 @@ impl<const FD: StdioRawFd> StdioStream<FD> {
         }
         Ok(Self(Arc::new(unsafe { StdioOwnedFd::from_raw_fd(fd) })))
     }
+
+    #[cfg(windows)]
+    pub fn as_owned(self) -> Option<OwnedHandle> {
+        self.0.as_owned()
+    }
 }
 
 impl<const FD: StdioRawFd> StdioStream<FD> {
-    fn try_from_path(path: impl AsRef<Path>) -> Result<Self> {
+    pub fn try_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if path.as_os_str().is_empty() {
             return Ok(Self(Arc::default()));

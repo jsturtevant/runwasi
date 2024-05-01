@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 
 use crate::sandbox::instance::Nop;
 use crate::sandbox::{Instance, InstanceConfig, Result};
+use crate::container::NoEngine;
 
 pub(super) enum InstanceOption<I: Instance> {
     Instance(I),
@@ -11,7 +12,7 @@ pub(super) enum InstanceOption<I: Instance> {
 }
 
 impl<I: Instance> Instance for InstanceOption<I> {
-    type Engine = ();
+    type Engine = NoEngine;
 
     fn new(_id: String, _cfg: Option<&InstanceConfig<Self::Engine>>) -> Result<Self> {
         // this is never called

@@ -4,7 +4,6 @@ members = [
     "crates/containerd-shim-wasm-test-modules",
     "crates/wasi-demo-app",
     "crates/oci-tar-builder",
-    "crates/containerd-shim-wasmedge",
     "crates/containerd-shim-wasmtime",
     "crates/containerd-shim-wasmer"
 ]
@@ -42,7 +41,7 @@ tempfile = "3.10"
 thiserror = "1.0"
 ttrpc = "0.8.0"
 wat = "1.205"
-windows-sys = "0.52"
+windows = {version = "0.56" }
 serial_test = "2"
 
 [profile.release]

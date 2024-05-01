@@ -36,6 +36,7 @@ wasmparser = "0.204.0"
 tokio-stream = { version = "0.1" }
 prost-types = "0.12" # should match version in containerd-shim
 sha256 = { workspace = true }
+containerd-client = { git = "https://github.com/containerd/rust-extensions", branch = "main"}
 
 [target.'cfg(unix)'.dependencies]
 caps = "0.5"
@@ -43,10 +44,16 @@ caps = "0.5"
 dbus = { version = "0", features = ["vendored"] }
 libcontainer = { workspace = true, features = ["libseccomp", "systemd", "v1", "v2"]}
 nix = { workspace = true, features = ["sched", "mount"] }
-containerd-client = "0.5.0"
+
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows = { workspace = true, features= [
+    "Win32_Foundation", 
+    "Win32_System_Threading", 
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_Storage_FileSystem"] }
+power-process =  { git= "https://github.com/jsturtevant/power-process", rev= "b51411702260f090292d5cf920a2ef46aa48276c" }
 
 [build-dependencies]
 ttrpc-codegen = { version = "0.4.2" }

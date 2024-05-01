@@ -47,6 +47,8 @@ where
         let tempdir = tempfile::tempdir()?;
         let dir = tempdir.path();
 
+        log::info!("creating wasi test directory: {}", dir.display());
+
         create_dir(dir.join("rootfs"))?;
         let rootdir = dir.join("runwasi");
         create_dir(&rootdir)?;
@@ -160,7 +162,7 @@ where
         let mut cfg = InstanceConfig::new(
             WasiInstance::Engine::default(),
             TEST_NAMESPACE,
-            "/run/containerd/containerd.sock",
+            r"\\.\pipe\containerd-containerd",
         );
         cfg.set_bundle(dir)
             .set_stdout(dir.join("stdout"))
@@ -270,6 +272,7 @@ pub mod oci_helpers {
             .arg("create")
             .arg(image_name)
             .arg(container_name)
+            .stdin(Stdio::null())
             .spawn()?
             .wait()?
             .success();
@@ -326,6 +329,7 @@ pub mod oci_helpers {
             .arg("import")
             .arg("--all-platforms")
             .arg(img_path)
+            .stdin(Stdio::null()) // needed for ctr on windows
             .spawn()?
             .wait()?
             .success();
@@ -456,6 +460,7 @@ pub mod oci_helpers {
             .expect("failed to get output of image list");
 
         let stdout = String::from_utf8(output.stdout).expect("failed to parse stdout");
+        log::info!("stdout: {}", stdout);
         stdout.contains(image_name)
     }
 

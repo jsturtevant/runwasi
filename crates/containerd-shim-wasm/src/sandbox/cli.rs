@@ -1,13 +1,19 @@
-use std::path::PathBuf;
+use std::{env, fs};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 
-use containerd_shim::{parse, run, Config};
+use anyhow::{Context, Error};
+use containerd_shim::{parse, run, Config, Flags};
+use oci_spec::image::Platform;
+use oci_spec::runtime::{ProcessBuilder, RootBuilder, Spec, SpecBuilder};
+use tokio::sync::mpsc::error;
 use ttrpc::Server;
 
+use crate::container::{Engine, WasiContext};
 use crate::sandbox::manager::Shim;
 use crate::sandbox::shim::Local;
-use crate::sandbox::{Instance, ManagerService, ShimCli};
+use crate::sandbox::{containerd, Instance, InstanceConfig, ManagerService, ShimCli, Stdio};
 use crate::services::sandbox_ttrpc::{create_manager, Manager};
 
 pub mod r#impl {
@@ -15,6 +21,8 @@ pub mod r#impl {
 }
 
 pub use crate::{revision, version};
+
+use super::stdio::StdioStream;
 
 #[macro_export]
 macro_rules! version {
@@ -44,7 +52,7 @@ pub fn shim_main<'a, I>(
     config: Option<Config>,
 ) where
     I: 'static + Instance + Sync + Send,
-    I::Engine: Default,
+    I::Engine: Engine,
 {
     let os_args: Vec<_> = std::env::args_os().collect();
     let flags = parse(&os_args[1..]).unwrap();
@@ -67,6 +75,7 @@ pub fn shim_main<'a, I>(
     let shim_client = format!("containerd-shim-{lower_name}d-{shim_version}");
     let shim_daemon = format!("containerd-{lower_name}d");
     let shim_id = format!("io.containerd.{lower_name}.{shim_version}");
+    let windows_shim_instance = format!("containerd-{lower_name}-windows");
 
     match argv0.to_lowercase() {
         s if s == shim_cli => {
@@ -91,9 +100,50 @@ pub fn shim_main<'a, I>(
             let (_tx, rx) = channel::<()>();
             rx.recv().unwrap();
         }
+        s if s == windows_shim_instance => {
+            match run_windows_instance::<I>(&flags) {
+                Ok(_) => {
+                    log::info!("instance exited successfully");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    std::process::exit(10);
+                }
+            }
+        }
         _ => {
             eprintln!("error: unrecognized binary name, expected one of {shim_cli}, {shim_client}, or {shim_daemon}.");
             std::process::exit(1);
         }
     }
+}
+
+
+fn run_windows_instance<I: Instance>(flags: &Flags) -> Result<(), Error>{
+    let e = I::Engine::default();
+
+    let cd = env::current_dir()?;
+    let id = fs::read_to_string(cd.join("id"))?;
+
+    let wasi_stdio = Stdio{
+        stdin: StdioStream::try_from_path("stdin")?,
+        stderr: StdioStream::try_from_path("stderr")?,
+        stdout: StdioStream::try_from_path("stdout")?,
+    };
+
+    let (modules, platform) = containerd::Client::connect(&flags.address, &flags.namespace)?
+            .load_modules(&id, &e).context("failed to load modules")?;
+
+
+    let mut spec = Spec::load(cd.join("config.json")).unwrap(); 
+    let ctx = WasiContext {
+        spec: &spec,
+        wasm_layers: &modules,
+        platform: &platform,
+    };
+
+
+        e.run_wasi(&ctx, wasi_stdio)?;
+    Ok(())
 }

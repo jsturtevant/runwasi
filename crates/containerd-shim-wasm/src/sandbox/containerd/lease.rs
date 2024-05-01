@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 use containerd_client::services::v1::leases_client::LeasesClient;
 use containerd_client::{tonic, with_namespace};
 use tonic::Request;

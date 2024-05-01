@@ -8,7 +8,8 @@ use crate::container::{PathResolve, RuntimeContext};
 use crate::sandbox::oci::WasmLayer;
 use crate::sandbox::Stdio;
 
-pub trait Engine: Clone + Send + Sync + 'static {
+// Engine is the trait that all runtimes must implement.
+pub trait Engine: Clone + Send + Sync + Default + 'static {
     /// The name to use for this engine
     fn name() -> &'static str;
 
@@ -78,4 +79,34 @@ pub trait Engine: Clone + Send + Sync + 'static {
     fn can_precompile(&self) -> Option<String> {
         None
     }
+}
+
+#[derive(Clone, Default)]
+pub struct NoEngine;
+
+impl Engine for NoEngine {
+    fn name() -> &'static str {
+        "no-engine"
+    }
+
+    fn run_wasi(&self, _ctx: &impl RuntimeContext, _stdio: Stdio) -> Result<i32> {
+        bail!("no engine")
+    }
+    
+    fn can_handle(&self, ctx: &impl RuntimeContext) -> Result<()> {
+        bail!("no engine")
+    }
+    
+    fn supported_layers_types() -> &'static [&'static str] {
+        &[]
+    }
+    
+    fn precompile(&self, _layers: &[WasmLayer]) -> Result<Vec<Option<Vec<u8>>>> {
+        bail!("precompile not supported");
+    }
+    
+    fn can_precompile(&self) -> Option<String> {
+        None
+    }
+    
 }
