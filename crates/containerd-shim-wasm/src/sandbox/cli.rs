@@ -53,7 +53,7 @@ pub fn shim_main<'a, I>(
     config: Option<Config>,
 ) where
     I: 'static + Instance + Sync + Send,
-    I::Engine: WasmEngine + Default,
+    I::Engine: WasmEngine,
 {
     let os_args: Vec<_> = std::env::args_os().collect();
     let flags = parse(&os_args[1..]).unwrap();
@@ -122,7 +122,7 @@ pub fn shim_main<'a, I>(
 
 
 fn run_windows_instance<I: Instance>(flags: &Flags) -> Result<(), Error>
-where <I as Instance>::Engine: WasmEngine + Default {   
+where <I as Instance>::Engine: WasmEngine {   
     let e = I::Engine::default();
 
     let cd = env::current_dir()?;

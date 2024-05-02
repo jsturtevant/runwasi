@@ -9,7 +9,7 @@ use crate::sandbox::oci::WasmLayer;
 use crate::sandbox::Stdio;
 
 // Engine is the trait that all runtimes must implement.
-pub trait Engine: Clone + Send + Sync + 'static {
+pub trait Engine: Default + Clone + Send + Sync + 'static {
     /// The name to use for this engine
     fn name() -> &'static str;
 
