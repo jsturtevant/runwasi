@@ -9,8 +9,6 @@ use super::error::Error;
 use super::sync::WaitableCell;
 use crate::sys::signals::*;
 
-use crate::container::{Engine as WasmEngine, NoEngine};
-
 /// Generic options builder for creating a wasm instance.
 /// This is passed to the `Instance::new` method.
 #[derive(Clone)]
@@ -117,7 +115,7 @@ impl<Engine: Send + Sync + Clone> InstanceConfig<Engine> {
 /// This means that the type cannot contain a non-`'static` reference.
 pub trait Instance: 'static {
     /// The WASI engine type
-    type Engine: WasmEngine + Send + Sync + Clone;
+    type Engine: Send + Sync + Clone;
 
     /// Create a new instance
     fn new(id: String, cfg: Option<&InstanceConfig<Self::Engine>>) -> Result<Self, Error>
@@ -156,7 +154,7 @@ pub struct Nop {
 }
 
 impl Instance for Nop {
-    type Engine = NoEngine;
+    type Engine = ();
     fn new(_id: String, _cfg: Option<&InstanceConfig<Self::Engine>>) -> Result<Self, Error> {
         Ok(Nop {
             exit_code: WaitableCell::new(),

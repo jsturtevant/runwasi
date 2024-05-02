@@ -11,7 +11,6 @@ use serde_json as json;
 use tempfile::tempdir;
 
 use super::*;
-use crate::container::NoEngine;
 use crate::sandbox::instance::Nop;
 use crate::sandbox::shim::events::EventSender;
 use crate::sandbox::shim::instance_option::InstanceOption;
@@ -78,7 +77,7 @@ fn test_delete_after_create() {
 
     let (tx, _rx) = channel();
     let local = Arc::new(Local::<Nop, _>::new(
-        NoEngine::default(),
+        (),
         tx,
         Arc::new(ExitSignal::default()),
         "test_namespace",
@@ -109,7 +108,7 @@ fn test_cri_task() -> Result<()> {
     let (etx, _erx) = channel();
     let exit_signal = Arc::new(ExitSignal::default());
     let local = Arc::new(Local::<Nop, _>::new(
-        NoEngine::default(),
+        (),
         etx,
         exit_signal,
         "test_namespace",
@@ -282,7 +281,7 @@ fn test_task_lifecycle() -> Result<()> {
     let (etx, _erx) = channel(); // TODO: check events
     let exit_signal = Arc::new(ExitSignal::default());
     let local = Arc::new(Local::<Nop, _>::new(
-        NoEngine::default(),
+        (),
         etx,
         exit_signal,
         "test_namespace",

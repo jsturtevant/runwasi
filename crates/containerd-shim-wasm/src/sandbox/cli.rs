@@ -10,10 +10,11 @@ use oci_spec::runtime::{ProcessBuilder, RootBuilder, Spec, SpecBuilder};
 use tokio::sync::mpsc::error;
 use ttrpc::Server;
 
-use crate::container::{Engine, WasiContext};
+use crate::container::{Engine as WasmEngine, WasiContext};
 use crate::sandbox::manager::Shim;
 use crate::sandbox::shim::Local;
 use crate::sandbox::{containerd, Instance, InstanceConfig, ManagerService, ShimCli, Stdio};
+use crate::services::sandbox;
 use crate::services::sandbox_ttrpc::{create_manager, Manager};
 
 pub mod r#impl {
@@ -52,7 +53,7 @@ pub fn shim_main<'a, I>(
     config: Option<Config>,
 ) where
     I: 'static + Instance + Sync + Send,
-    I::Engine: Engine,
+    I::Engine: WasmEngine + Default,
 {
     let os_args: Vec<_> = std::env::args_os().collect();
     let flags = parse(&os_args[1..]).unwrap();
@@ -120,7 +121,8 @@ pub fn shim_main<'a, I>(
 }
 
 
-fn run_windows_instance<I: Instance>(flags: &Flags) -> Result<(), Error>{
+fn run_windows_instance<I: Instance>(flags: &Flags) -> Result<(), Error>
+where <I as Instance>::Engine: WasmEngine + Default {   
     let e = I::Engine::default();
 
     let cd = env::current_dir()?;

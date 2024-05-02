@@ -916,7 +916,7 @@ mod tests {
         x
     }
 
-    #[derive(Clone, Default)]
+    #[derive(Clone)]
     struct FakePrecomiplerEngine {
         precompile_id: Option<String>,
         precompiled_layers: HashMap<String, Vec<u8>>,
