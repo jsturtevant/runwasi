@@ -599,12 +599,13 @@ mod tests {
     use super::*;
     use crate::container::RuntimeContext;
     use crate::sandbox::Stdio;
+    use crate::sys;
     use crate::testing::oci_helpers::ImageContent;
     use crate::testing::{oci_helpers, TEST_NAMESPACE};
 
     #[test]
     fn test_save_content() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, "test-ns").unwrap();
         let data = b"hello world".to_vec();
@@ -640,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_layers_when_precompile_not_supported() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, TEST_NAMESPACE).unwrap();
 
@@ -656,7 +657,7 @@ mod tests {
 
     #[test]
     fn test_layers_are_precompiled_once() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 
@@ -679,7 +680,7 @@ mod tests {
 
     #[test]
     fn test_layers_are_recompiled_if_version_changes() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 
@@ -700,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_layers_are_precompiled() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 
@@ -733,7 +734,7 @@ mod tests {
 
     #[test]
     fn test_layers_are_precompiled_but_not_for_all_layers() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 
@@ -757,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_layers_do_not_need_precompiled_if_new_layers_are_added_to_existing_image() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 
@@ -801,7 +802,7 @@ mod tests {
 
     #[test]
     fn test_layers_do_not_need_precompiled_if_new_layers_are_add_to_new_image() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 
@@ -831,7 +832,7 @@ mod tests {
 
     #[test]
     fn test_layers_are_precompiled_for_multiple_layers() {
-        let path = PathBuf::from("/run/containerd/containerd.sock");
+        let path = PathBuf::from(sys::DEFAULT_CONTAINERD_PIPE);
         let path = path.to_str().unwrap();
         let client = Client::connect(path, crate::testing::TEST_NAMESPACE).unwrap();
 

@@ -80,4 +80,3 @@ pub trait Engine: Default + Clone + Send + Sync + 'static {
         None
     }
 }
-

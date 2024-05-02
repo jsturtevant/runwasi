@@ -2,13 +2,12 @@ use std::fs::OpenOptions;
 use std::io::ErrorKind::Other;
 use std::io::{Error, Result};
 use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::FromRawHandle;
 use std::os::windows::prelude::{AsRawHandle, IntoRawHandle, OwnedHandle};
 use std::path::Path;
 use std::process::Stdio;
 
 use crossbeam::atomic::AtomicCell;
-use libc::{get_osfhandle, intptr_t, open_osfhandle, O_APPEND};
+use libc::{intptr_t, open_osfhandle, O_APPEND};
 use windows::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED;
 
 pub type StdioRawFd = libc::c_int;
@@ -43,7 +42,7 @@ impl StdioOwnedFd {
         }
         let _ = handle.into_raw_handle(); // drop ownership of the handle, it's managed by fd now
         Ok(unsafe { Self::from_raw_fd(fd) })
-    }
+    }   
 
     pub unsafe fn from_raw_fd(fd: StdioRawFd) -> Self {
         Self(AtomicCell::new(fd))
@@ -54,13 +53,6 @@ impl StdioOwnedFd {
         (fd >= 0).then_some(fd)
     }
 
-    pub fn as_owned(&self)-> Option<OwnedHandle> {
-        if let Some(fd) = self.as_raw_fd() {
-            return Some(unsafe {OwnedHandle::from_raw_handle(get_osfhandle(fd) as _)});
-        }
-        
-        None
-    }
 
     pub fn take(&self) -> Self {
         let fd = self.0.swap(-1);

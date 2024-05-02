@@ -256,7 +256,10 @@ fn prepare_wasi_ctx(
         .args(ctx.args())?
         .envs(envs.as_slice())?
         .inherit_stdio();
-        //.preopened_dir(Dir::from_std_file(File::open("/")?), "/")?;
+
+    #[cfg(not(windows))]
+    wasi_preview1_builder.preopened_dir(Dir::from_std_file(File::open("/")?), "/")?;
+
     let wasi_preview1_ctx = wasi_preview1_builder.build();
 
     // TODO: make this more configurable (e.g. allow the user to specify the
@@ -270,12 +273,14 @@ fn prepare_wasi_ctx(
         .args(ctx.args())
         .envs(envs.as_slice())
         .inherit_stdio();
-        // .preopened_dir(
-        //     Dir::from_std_file(File::open("/")?),
-        //     dir_perms,
-        //     file_perms,
-        //     "/",
-        // );
+
+        #[cfg(not(windows))]
+        wasi_preview2_builder.preopened_dir(
+             Dir::from_std_file(File::open("/")?),
+             dir_perms,
+             file_perms,
+             "/",
+         );
     let wasi_preview2_ctx = wasi_preview2_builder.build();
     let wasi_data = WasiCtx {
         wasi_preview1: wasi_preview1_ctx,

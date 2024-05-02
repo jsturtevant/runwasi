@@ -11,6 +11,7 @@ pub use containerd_shim_wasm_test_modules as modules;
 use oci_spec::runtime::{ProcessBuilder, RootBuilder, SpecBuilder};
 
 use crate::sandbox::{Instance, InstanceConfig};
+use crate::sys;
 use crate::sys::signals::SIGKILL;
 
 pub const TEST_NAMESPACE: &str = "runwasi-test";
@@ -162,7 +163,7 @@ where
         let mut cfg = InstanceConfig::new(
             WasiInstance::Engine::default(),
             TEST_NAMESPACE,
-            r"\\.\pipe\containerd-containerd",
+            sys::DEFAULT_CONTAINERD_PIPE,
         );
         cfg.set_bundle(dir)
             .set_stdout(dir.join("stdout"))
@@ -460,7 +461,6 @@ pub mod oci_helpers {
             .expect("failed to get output of image list");
 
         let stdout = String::from_utf8(output.stdout).expect("failed to parse stdout");
-        log::info!("stdout: {}", stdout);
         stdout.contains(image_name)
     }
 
