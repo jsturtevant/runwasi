@@ -42,7 +42,7 @@ impl StdioOwnedFd {
         }
         let _ = handle.into_raw_handle(); // drop ownership of the handle, it's managed by fd now
         Ok(unsafe { Self::from_raw_fd(fd) })
-    }   
+    }
 
     pub unsafe fn from_raw_fd(fd: StdioRawFd) -> Self {
         Self(AtomicCell::new(fd))
@@ -52,7 +52,6 @@ impl StdioOwnedFd {
         let fd = self.0.load();
         (fd >= 0).then_some(fd)
     }
-
 
     pub fn take(&self) -> Self {
         let fd = self.0.swap(-1);

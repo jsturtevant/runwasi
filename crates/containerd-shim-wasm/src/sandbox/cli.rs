@@ -1,7 +1,7 @@
-use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
+use std::{env, fs};
 
 use anyhow::{Context, Error};
 use containerd_shim::{parse, run, Config, Flags};
@@ -21,9 +21,8 @@ pub mod r#impl {
     pub use git_version::git_version;
 }
 
-pub use crate::{revision, version};
-
 use super::stdio::StdioStream;
+pub use crate::{revision, version};
 
 #[macro_export]
 macro_rules! version {
@@ -101,18 +100,16 @@ pub fn shim_main<'a, I>(
             let (_tx, rx) = channel::<()>();
             rx.recv().unwrap();
         }
-        s if s == windows_shim_instance => {
-            match run_windows_instance::<I>(&flags) {
-                Ok(_) => {
-                    log::info!("instance exited successfully");
-                    std::process::exit(0);
-                }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    std::process::exit(10);
-                }
+        s if s == windows_shim_instance => match run_windows_instance::<I>(&flags) {
+            Ok(_) => {
+                log::info!("instance exited successfully");
+                std::process::exit(0);
             }
-        }
+            Err(e) => {
+                eprintln!("error: {}", e);
+                std::process::exit(10);
+            }
+        },
         _ => {
             eprintln!("error: unrecognized binary name, expected one of {shim_cli}, {shim_client}, or {shim_daemon}.");
             std::process::exit(1);
@@ -120,32 +117,32 @@ pub fn shim_main<'a, I>(
     }
 }
 
-
 fn run_windows_instance<I: Instance>(flags: &Flags) -> Result<(), Error>
-where <I as Instance>::Engine: WasmEngine {   
+where
+    <I as Instance>::Engine: WasmEngine,
+{
     let e = I::Engine::default();
 
     let cd = env::current_dir()?;
     let id = fs::read_to_string(cd.join("id"))?;
 
-    let wasi_stdio = Stdio{
+    let wasi_stdio = Stdio {
         stdin: StdioStream::try_from_path("stdin")?,
         stderr: StdioStream::try_from_path("stderr")?,
         stdout: StdioStream::try_from_path("stdout")?,
     };
 
     let (modules, platform) = containerd::Client::connect(&flags.address, &flags.namespace)?
-            .load_modules(&id, &e).context("failed to load modules")?;
+        .load_modules(&id, &e)
+        .context("failed to load modules")?;
 
-
-    let mut spec = Spec::load(cd.join("config.json")).unwrap(); 
+    let mut spec = Spec::load(cd.join("config.json")).unwrap();
     let ctx = WasiContext {
         spec: &spec,
         wasm_layers: &modules,
         platform: &platform,
     };
 
-
-        e.run_wasi(&ctx, wasi_stdio)?;
+    e.run_wasi(&ctx, wasi_stdio)?;
     Ok(())
 }

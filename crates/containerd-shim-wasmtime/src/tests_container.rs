@@ -5,6 +5,7 @@ use containerd_shim_wasm::testing::modules::*;
 use containerd_shim_wasm::testing::{oci_helpers, WasiTest};
 use serial_test::serial;
 use wasmtime::Config;
+
 use crate::instance::{WasiConfig, WasmtimeEngine};
 
 #[test]

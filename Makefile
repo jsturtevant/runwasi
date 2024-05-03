@@ -128,6 +128,11 @@ endif
 endif
 
 test-%:
+ifeq ($(OS), Windows_NT)
+	# need to make sure binary is avaliable for the tests or you will be testing older version
+	$(MAKE) build-$*
+	cp $(TARGET_DIR)/$(TARGET)/$(OPT_PROFILE)/containerd-shim-$*-v1$(EXE_SUFFIX) $(TARGET_DIR)/$(TARGET)/$(OPT_PROFILE)/containerd-$*-windows$(EXE_SUFFIX)
+endif
 	# run tests in one thread to prevent paralellism
 	RUST_LOG=trace $(CARGO) test $(TARGET_FLAG) --package containerd-shim-$* $(FEATURES_$*) --lib --verbose $(TEST_ARGS_SEP) --nocapture --test-threads=1
 

@@ -1,27 +1,8 @@
 # Windows: Getting Started
 
-Currently, **runwasi** depends on a Linux environment (i.e., because it has to wire up networking and rootfs mounts). Therefore, to run it on Windows, we recommend utilizing the Windows Subsystem for Linux (WSL).
+Windows support is a work in progress. See https://github.com/containerd/runwasi/issues/49 for latest. Of note, it currently requires some additional work to support networking and volumes.
 
-To get started with WSL, see [this](https://docs.microsoft.com/en-us/windows/wsl/install).
-
-Once you have your WSL environment set and you have cloned the **runwasi** repository, you will need to install Docker and the Docker Buildx plugin.
-
-To install Docker and the Docker Buildx Plugin, see [this](https://docs.docker.com/engine/install/) to find specific installation instructions for your WSL distro.
-
-Before proceeding, it's also recommended to install Docker Desktop on Windows and run it once.
-
-To finish off installing pre-requisites, install Rust following [this](https://www.rust-lang.org/tools/install).
-
-After following these steps and navigating to the runwasi directory in your terminal:
-- run `make build`,
-- run `make install`,
-- run `make test/out/img.tar`,
-- open a secondary terminal and run `containerd`, and
-- run `make load`.
-
-After this, you can execute an example, like: `ctr run --rm --runtime=io.containerd.wasmtime.v1 docker.io/library/wasmtest:latest testwasm`.
-
-> To kill the process from the example, you can run: `ctr task kill -s SIGKILL testwasm`.
+The Windows shims only supports [Wasm OCI images](../README.md#demo-2-using-oci-images-with-custom-wasm-layers).  
 
 ## Building and developing on Windows
 
@@ -40,6 +21,12 @@ Then you can run:
 make build
 ```
 
+You may need to add the following to your path to access some of the binaries used in the `makefile`:
+
+```
+C:\Program Files\Git\usr\local\bin\ 
+```
+
 ### Using VS code
 If you are using VS Code for development you can use the following `settings.json` in the `.vscode` folder of the project:
 
@@ -51,3 +38,9 @@ If you are using VS Code for development you can use the following `settings.jso
         "WASMEDGE_INCLUDE_DIR": "C:\\Program Files\\WasmEdge\\include"
     }
 }
+
+## Developing Linux shims Using Wsl
+
+Follow the Windows instructions to [get started with WSL](https://github.com/containerd/runwasi/blob/main/docs/windows-getting-started.md#:~:text=To%20get%20started,Docker%20Buildx%20plugin.).
+
+Once you have your WSL environment set and you have cloned the runwasi repository, can follow the same instructions on the [readme](../README.md#contributing).

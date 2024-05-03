@@ -1,23 +1,26 @@
-use std::process::{Stdio};
-use std::sync::Mutex;
-use std::{env, fs, thread};
 use std::marker::PhantomData;
+use std::os::windows::prelude::AsRawHandle;
+use std::process::Stdio;
+use std::sync::Mutex;
+use std::time::Duration;
+use std::{env, fs, thread};
+
 use anyhow::Context;
+use chrono::{DateTime, Utc};
 use power_process::power_command::{Command, CommandExt};
 use windows::Win32::Foundation::HANDLE;
-use std::os::windows::prelude::AsRawHandle;
-use std::time::Duration;
-
-use chrono::{DateTime, Utc};
 use windows::Win32::System::Threading::{TerminateProcess, PROC_THREAD_ATTRIBUTE_JOB_LIST};
 
 use crate::container::{Engine, RuntimeContext, WasiContext};
 use crate::sandbox::sync::WaitableCell;
-use crate::sandbox::{containerd, Error as SandboxError, Instance as SandboxInstance, InstanceConfig, Stdio as WasiStdio};
+use crate::sandbox::{
+    containerd, Error as SandboxError, Instance as SandboxInstance, InstanceConfig,
+    Stdio as WasiStdio,
+};
 use crate::sys::job::new_job;
 use crate::sys::signals::SIGKILL;
 
-pub struct Instance<E: Engine>{
+pub struct Instance<E: Engine> {
     exit_code: WaitableCell<(u32, DateTime<Utc>)>,
     id: String,
     process_handle: Mutex<Option<isize>>,
@@ -37,7 +40,6 @@ impl<E: Engine> SandboxInstance for Instance<E> {
         let namespace = cfg.get_namespace();
         let address = cfg.get_containerd_address();
         let bundle = cfg.get_bundle();
-        
 
         log::info!("writing id file: {}", bundle.to_str().unwrap());
         let id_file = bundle.join("id");
@@ -59,18 +61,25 @@ impl<E: Engine> SandboxInstance for Instance<E> {
     /// Nothing internally should be using this ID, but it is returned to containerd where a user may want to use it.
     fn start(&self) -> Result<u32, SandboxError> {
         log::debug!("starting instance {}", self.id);
-      
+
         // make sure we have an exit code by the time we finish (even if there's a panic)
         let guard = self.exit_code.set_guard_with(|| (137, Utc::now()));
 
         let mut cmd = Command::new("containerd-wasmtime-windows");
         cmd.current_dir(self.bundle.as_path())
-         .arg("--address").arg(self.address.clone())
-         .arg("--namespace").arg(self.namespace.clone());
-        
+            .arg("--address")
+            .arg(self.address.clone())
+            .arg("--namespace")
+            .arg(self.namespace.clone());
+
         // todo read the config and set up cpu/mem limits
         let job = new_job(&self.id).unwrap();
-        unsafe { cmd.raw_attribute(PROC_THREAD_ATTRIBUTE_JOB_LIST as usize, job.as_raw_handle() as isize);}
+        unsafe {
+            cmd.raw_attribute(
+                PROC_THREAD_ATTRIBUTE_JOB_LIST as usize,
+                job.as_raw_handle() as isize,
+            );
+        }
 
         let mut child_process = cmd.spawn().context("failed to start container")?;
 
@@ -98,7 +107,9 @@ impl<E: Engine> SandboxInstance for Instance<E> {
     /// Send a signal to the instance
     fn kill(&self, signal: u32) -> Result<(), SandboxError> {
         if signal != SIGKILL as u32 {
-            return Err(SandboxError::InvalidArgument("only SIGKILL is supported".to_string()));
+            return Err(SandboxError::InvalidArgument(
+                "only SIGKILL is supported".to_string(),
+            ));
         }
 
         let h = self.process_handle.lock().unwrap().unwrap();

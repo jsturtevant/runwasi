@@ -274,13 +274,13 @@ fn prepare_wasi_ctx(
         .envs(envs.as_slice())
         .inherit_stdio();
 
-        #[cfg(not(windows))]
-        wasi_preview2_builder.preopened_dir(
-             Dir::from_std_file(File::open("/")?),
-             dir_perms,
-             file_perms,
-             "/",
-         );
+    #[cfg(not(windows))]
+    wasi_preview2_builder.preopened_dir(
+        Dir::from_std_file(File::open("/")?),
+        dir_perms,
+        file_perms,
+        "/",
+    );
     let wasi_preview2_ctx = wasi_preview2_builder.build();
     let wasi_data = WasiCtx {
         wasi_preview1: wasi_preview1_ctx,

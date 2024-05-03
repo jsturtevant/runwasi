@@ -5,9 +5,9 @@ use containerd_shim_wasm::testing::modules::*;
 use containerd_shim_wasm::testing::{oci_helpers, WasiTest};
 use serial_test::serial;
 use wasmtime::Config;
-use crate::instance::{WasiConfig, WasmtimeEngine};
 use WasmtimeTestInstance as WasiInstance;
 
+use crate::instance::{WasiConfig, WasmtimeEngine};
 
 // use test configuration to avoid dead locks when running tests that use precompiled content
 // https://github.com/containerd/runwasi/issues/357
@@ -26,7 +26,6 @@ impl WasiConfig for WasiTestConfig {
         config
     }
 }
-
 
 #[test]
 #[serial]
